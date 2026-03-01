@@ -1,0 +1,176 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Weaver",
+  "projectDescription": "Ultra-efficient AI agent orchestration service for high-density, low-latency managed deployments in Docker containers.",
+  "theme": "aspen",
+  "primaryColor": "#00ADD8",
+  "lightColor": "#5DC9E2",
+  "darkColor": "#007D9C",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/agents",
+              "concepts/workspace",
+              "concepts/gateway",
+              "concepts/channels"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/configuration",
+              "guides/spawning-agents",
+              "guides/multi-channel-setup",
+              "guides/docker-deployment",
+              "guides/oauth-authentication"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/tools",
+              "features/skills",
+              "features/cron-jobs",
+              "features/heartbeat",
+              "features/device-monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "CLI Commands",
+            "pages": [
+              "api/cli/overview",
+              "api/cli/onboard",
+              "api/cli/agent",
+              "api/cli/gateway",
+              "api/cli/auth",
+              "api/cli/cron",
+              "api/cli/skills",
+              "api/cli/migrate"
+            ]
+          },
+          {
+            "group": "REST API",
+            "pages": [
+              "api/rest/overview",
+              "api/rest/chat",
+              "api/rest/health"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "api/tools/filesystem",
+              "api/tools/shell",
+              "api/tools/web",
+              "api/tools/hardware",
+              "api/tools/image",
+              "api/tools/subagent"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "LLM Providers",
+            "pages": [
+              "integrations/providers/overview",
+              "integrations/providers/gemini",
+              "integrations/providers/openai",
+              "integrations/providers/anthropic",
+              "integrations/providers/openrouter",
+              "integrations/providers/local"
+            ]
+          },
+          {
+            "group": "Chat Channels",
+            "pages": [
+              "integrations/channels/overview",
+              "integrations/channels/telegram",
+              "integrations/channels/discord",
+              "integrations/channels/slack",
+              "integrations/channels/line",
+              "integrations/channels/qq"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Community",
+            "pages": [
+              "resources/contributing",
+              "resources/roadmap",
+              "resources/faq"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "resources/migration/openclaw"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Ultra-fast agent spawning (<1s boot time)",
+    "Minimal resource footprint (<10MB RAM per agent)",
+    "Docker-isolated workspace environments",
+    "Multi-channel gateway (Telegram, Discord, Slack, Line, QQ)",
+    "Extensible tool system with filesystem, shell, web, and hardware tools",
+    "Dynamic skills loading from GitHub repositories",
+    "Scheduled task execution with cron-style jobs",
+    "OAuth authentication for OpenAI and token-based auth",
+    "Subagent spawning for parallel task execution",
+    "Device event monitoring and heartbeat service",
+    "REST API and health check endpoints",
+    "Support for multiple LLM providers (Gemini, OpenAI, Anthropic, Claude, local vLLM)"
+  ],
+  "publicApiSurface": [
+    "weaver onboard - Initialize configuration and workspace",
+    "weaver agent - Interactive or direct agent execution",
+    "weaver gateway - Start multi-channel gateway server",
+    "weaver auth login - OAuth and token authentication",
+    "weaver cron - Manage scheduled tasks",
+    "weaver skills - Install, list, and manage skills",
+    "weaver migrate - Migrate from OpenClaw",
+    "POST /chat - REST API for chat interactions",
+    "GET /health - Health check endpoint",
+    "GET /ready - Readiness probe endpoint",
+    "Tool: read_file - Read file contents",
+    "Tool: write_file - Write or create files",
+    "Tool: edit_file - Edit existing files",
+    "Tool: exec - Execute shell commands",
+    "Tool: web_search - Search the web (Brave/DuckDuckGo)",
+    "Tool: web_fetch - Fetch web page content",
+    "Tool: spawn_subagent - Create parallel subagent",
+    "Tool: cron - Manage scheduled tasks",
+    "Tool: message - Send messages to channels",
+    "Tool: i2c - Hardware I2C communication",
+    "Tool: spi - Hardware SPI communication"
+  ]
+}
