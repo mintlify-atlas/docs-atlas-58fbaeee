@@ -138,6 +138,38 @@ Send messages to users on chat channels.
 
 **Context:** Uses current channel/chat if not specified.
 
+### UI Control
+
+#### canvas
+Control the Nest UI interface for visual organization and node manipulation.
+
+**Parameters:**
+- `action` (string, required) - Action to perform: "create_node", "update_node", "delete_node", "clear"
+- `type` (string) - Node type: "text", "code", "image", "video"
+- `title` (string) - Node title
+- `content` (string) - Node content
+- `node_id` (string) - Target node ID (for update/delete)
+- `x`, `y` (number) - Canvas position
+- `width`, `height` (number) - Node dimensions
+
+**Use Cases:**
+- Creating visual knowledge graphs
+- Organizing conversation artifacts
+- Building interactive canvases
+- Documenting complex workflows
+
+**Example:**
+```json
+{
+  "action": "create_node",
+  "type": "code",
+  "title": "API Implementation",
+  "content": "func GetUser(id string) (*User, error) { ... }",
+  "x": 100,
+  "y": 200
+}
+```
+
 ### Agent Orchestration
 
 #### subagent

@@ -82,6 +82,54 @@ $ weaver agent -m "Hello!"
 
 Weaver stores configuration at `~/.weaver/config.json` by default.
 
+## status
+
+Check system status and configuration:
+
+```bash
+weaver status
+```
+
+### Output
+
+The status command displays:
+
+- **Version Information** - Current version, build time, Go version
+- **Configuration** - Config file path and validation status
+- **Workspace** - Workspace directory path and validation
+- **Model** - Configured LLM model
+- **Provider Status** - API keys and authentication status for all providers
+  - OpenRouter API
+  - Anthropic API
+  - OpenAI API
+  - Gemini API
+  - Zhipu API
+  - Groq API
+  - vLLM/Local endpoints
+- **OAuth Status** - Active OAuth sessions with expiration status
+
+### Example Output
+
+```
+🕸️ weaver Status
+Version: v1.0.0 (git: abc1234)
+Build: 2026-03-01T00:00:00Z
+
+Config: /home/user/.weaver/config.json ✓
+Workspace: /home/user/.weaver/workspace ✓
+Model: gemini-3-flash-preview
+OpenRouter API: ✓
+Anthropic API: not set
+OpenAI API: ✓
+Gemini API: ✓
+Zhipu API: not set
+Groq API: ✓
+vLLM/Local: not set
+
+OAuth/Token Auth:
+  openai (oauth): authenticated
+```
+
 ## Next Steps
 
 <CardGroup cols={2}>
