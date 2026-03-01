@@ -1,0 +1,210 @@
+---
+title: 'Chat API'
+description: 'Send messages to AI agents and receive intelligent responses'
+---
+
+## Endpoint
+
+```
+POST /chat
+```
+
+Send a message to a Weaver AI agent and receive a response. This endpoint supports text messages, media generation, attachments, and custom response formats.
+
+## Request Headers
+
+<ParamField header="Content-Type" type="string" required>
+  Must be `application/json`
+</ParamField>
+
+## Request Body
+
+<ParamField body="message" type="string" required>
+  The message text to send to the AI agent
+</ParamField>
+
+<ParamField body="session_key" type="string" default="rest:default">
+  Unique identifier for the conversation session. Use the same session key to maintain conversation context across multiple requests.
+</ParamField>
+
+<ParamField body="channel" type="string" default="rest">
+  The channel identifier for routing and logging purposes
+</ParamField>
+
+<ParamField body="chat_id" type="string" default="api">
+  Chat or user identifier within the channel
+</ParamField>
+
+<ParamField body="media_config" type="object">
+  Configuration for image generation and other media tasks. Format depends on the specific media tool being invoked.
+</ParamField>
+
+<ParamField body="attachments" type="array">
+  Array of attachment objects with metadata
+  
+  ```json
+  [
+    {
+      "url": "https://example.com/file.pdf",
+      "type": "document",
+      "name": "file.pdf"
+    }
+  ]
+  ```
+</ParamField>
+
+<ParamField body="response_mime_type" type="string">
+  Desired MIME type for the response (e.g., `image/png` for image generation)
+</ParamField>
+
+## Response Fields
+
+<ResponseField name="response" type="string">
+  The AI agent's text response to the message
+</ResponseField>
+
+<ResponseField name="ui_commands" type="array">
+  Array of UI commands that can be executed by the client interface
+  
+  ```json
+  [
+    {
+      "command": "display_image",
+      "params": {"url": "https://example.com/image.png"}
+    }
+  ]
+  ```
+</ResponseField>
+
+<ResponseField name="attachment_url" type="string">
+  URL or data URI of generated media content (images, etc.)
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if the request failed (empty on success)
+</ResponseField>
+
+## Example: Basic Chat
+
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Hello, what can you help me with?",
+    "session_key": "user-123"
+  }'
+```
+
+### Response
+
+```json
+{
+  "response": "Hello! I'm Weaver, an AI agent orchestration system. I can help you with various tasks including code generation, data processing, system automation, and more. What would you like assistance with today?",
+  "ui_commands": [],
+  "error": ""
+}
+```
+
+## Example: Continued Conversation
+
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Can you analyze the logs from yesterday?",
+    "session_key": "user-123",
+    "channel": "rest",
+    "chat_id": "admin-console"
+  }'
+```
+
+### Response
+
+```json
+{
+  "response": "I'll analyze the logs from yesterday. Let me check the system logs...",
+  "ui_commands": [
+    {
+      "command": "show_progress",
+      "params": {"task": "log_analysis"}
+    }
+  ],
+  "error": ""
+}
+```
+
+## Example: Image Generation
+
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Generate a sunset over mountains",
+    "session_key": "user-123",
+    "response_mime_type": "image/png",
+    "media_config": {
+      "width": 1024,
+      "height": 768
+    }
+  }'
+```
+
+### Response
+
+```json
+{
+  "response": "I've generated an image of a sunset over mountains.",
+  "ui_commands": [],
+  "attachment_url": "data:image/png;base64,iVBORw0KGgoAAAANS...",
+  "error": ""
+}
+```
+
+## Example: Error Response
+
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": ""
+  }'
+```
+
+### Response
+
+```
+HTTP/1.1 400 Bad Request
+
+Empty message
+```
+
+## Implementation Details
+
+The chat endpoint is implemented in `/home/daytona/workspace/source/pkg/health/server.go:171` and processes messages through the agent loop, supporting:
+
+- Session-based conversation context
+- Multi-channel routing (REST, Telegram, Slack, etc.)
+- Media generation and attachments
+- UI command execution
+- Custom response MIME types
+
+## Session Management
+
+Conversation context is maintained using the `session_key` parameter. Use the same session key across requests to:
+
+- Maintain conversation history
+- Preserve agent state
+- Enable context-aware responses
+
+Sessions are stored in memory and persist for the lifetime of the Weaver service.
+
+## Timeout Considerations
+
+The `/chat` endpoint has a 5-minute (300 second) timeout to accommodate long-running AI operations such as:
+
+- Complex code generation
+- Large data processing tasks
+- Image generation
+- Multi-step agent orchestration
+
+For operations that may exceed this timeout, consider implementing async job patterns with status polling.

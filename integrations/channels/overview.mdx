@@ -1,0 +1,137 @@
+---
+title: Channel Integration Overview
+description: Connect Weaver to multiple messaging platforms for seamless AI agent communication
+---
+
+Weaver supports multiple messaging platforms through its channel integration system. Each channel enables bidirectional communication between users and AI agents across different platforms.
+
+## Supported Channels
+
+Weaver currently supports the following messaging platforms:
+
+- **[Telegram](/integrations/channels/telegram)** - Popular messaging app with bot API support
+- **[Discord](/integrations/channels/discord)** - Gaming and community chat platform
+- **[Slack](/integrations/channels/slack)** - Professional workspace communication
+- **[LINE](/integrations/channels/line)** - Leading messaging platform in Asia
+- **[QQ](/integrations/channels/qq)** - China's most popular instant messaging platform
+
+## How Channels Work
+
+Weaver's channel architecture consists of:
+
+1. **Channel Manager** - Coordinates all active channels and message routing
+2. **Message Bus** - Central hub for inbound and outbound messages
+3. **Channel Adapters** - Platform-specific implementations
+
+### Message Flow
+
+```
+User Message → Platform API → Channel Adapter → Message Bus → Agent → Message Bus → Channel Adapter → Platform API → User
+```
+
+## Configuration
+
+Channels are configured in `config.yaml` under the `channels` section:
+
+```yaml
+channels:
+  telegram:
+    enabled: true
+    token: "your-bot-token"
+    allow_from:
+      - "user_id_1"
+      - "user_id_2"
+  
+  discord:
+    enabled: true
+    token: "your-bot-token"
+    allow_from:
+      - "user_id_1"
+```
+
+### Common Configuration Options
+
+All channels support these common settings:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | boolean | Enable/disable the channel |
+| `allow_from` | array | Whitelist of allowed user IDs (optional) |
+
+## Access Control
+
+Every channel implements an allowlist feature through the `allow_from` configuration:
+
+- If `allow_from` is empty or not set, all users can interact
+- If `allow_from` contains user IDs, only those users are allowed
+- User ID format varies by platform (see individual channel docs)
+
+## Media Support
+
+Most channels support various media types:
+
+- **Images** - Automatically downloaded and processed
+- **Voice/Audio** - Can be transcribed using Groq Whisper
+- **Files** - Downloaded for agent processing
+- **Video** - Platform-dependent support
+
+## Voice Transcription
+
+Channels can integrate with Groq's Whisper API for voice message transcription:
+
+```yaml
+voice:
+  enabled: true
+  groq_api_key: "your-groq-key"
+  model: "whisper-large-v3"
+```
+
+When enabled, voice messages are automatically transcribed and sent to the agent as text.
+
+## Starting Channels
+
+The Channel Manager automatically starts all enabled channels when Weaver launches. Each channel:
+
+1. Initializes its connection to the platform API
+2. Registers event handlers for incoming messages
+3. Begins listening for user messages
+4. Subscribes to the outbound message bus
+
+## Message Metadata
+
+Channels attach platform-specific metadata to each message:
+
+- `message_id` - Platform's unique message identifier
+- `user_id` - Sender's user ID
+- `username` - Sender's display name
+- `channel_id` - Platform-specific channel/chat identifier
+- Additional platform-specific fields
+
+This metadata helps agents provide context-aware responses.
+
+## Error Handling
+
+All channels implement graceful error handling:
+
+- Failed message sends are logged but don't crash the system
+- Network errors trigger automatic reconnection attempts
+- Invalid configurations prevent channel startup with clear error messages
+
+## Next Steps
+
+Choose a platform to integrate:
+
+<CardGroup cols={2}>
+  <Card title="Telegram" icon="telegram" href="/integrations/channels/telegram">
+    Set up Telegram bot integration
+  </Card>
+  <Card title="Discord" icon="discord" href="/integrations/channels/discord">
+    Configure Discord bot
+  </Card>
+  <Card title="Slack" icon="slack" href="/integrations/channels/slack">
+    Connect to Slack workspace
+  </Card>
+  <Card title="LINE" icon="line" href="/integrations/channels/line">
+    Integrate LINE Official Account
+  </Card>
+</CardGroup>

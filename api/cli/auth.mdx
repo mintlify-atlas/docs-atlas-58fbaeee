@@ -1,0 +1,306 @@
+---
+title: weaver auth
+description: Manage OAuth and token-based authentication for AI providers
+---
+
+The `auth` command manages authentication credentials for AI providers that support OAuth flows or require secure token storage.
+
+## Usage
+
+```bash
+weaver auth <subcommand> [options]
+```
+
+## Subcommands
+
+### login
+
+Authenticate with a provider using OAuth or token paste.
+
+```bash
+weaver auth login --provider <name> [--device-code]
+```
+
+<ParamField path="--provider, -p" type="string" required>
+  Provider to authenticate with
+  
+  **Supported providers:**
+  - `openai` - OpenAI OAuth or token
+  - `anthropic` - Token paste only
+</ParamField>
+
+<ParamField path="--device-code" type="flag">
+  Use device code flow instead of browser (for headless environments)
+  
+  Only applies to OpenAI OAuth.
+</ParamField>
+
+### logout
+
+Remove stored credentials for one or all providers.
+
+```bash
+weaver auth logout [--provider <name>]
+```
+
+<ParamField path="--provider, -p" type="string">
+  Specific provider to logout from
+  
+  If omitted, logs out from all providers.
+</ParamField>
+
+### status
+
+Show current authentication status for all providers.
+
+```bash
+weaver auth status
+```
+
+## Authentication Methods
+
+### OpenAI OAuth (Browser Flow)
+
+Best for local development with browser access:
+
+```bash
+$ weaver auth login --provider openai
+
+Opening browser for authentication...
+[Browser opens to OpenAI consent page]
+Login successful!
+Account: user@example.com
+```
+
+Flow:
+1. Opens browser to OpenAI OAuth page
+2. User grants permissions
+3. Weaver receives OAuth token
+4. Token stored securely with refresh capability
+
+### OpenAI OAuth (Device Code Flow)
+
+For headless servers or environments without browser:
+
+```bash
+$ weaver auth login --provider openai --device-code
+
+Please visit: https://auth.openai.com/activate
+Enter code: ABCD-EFGH
+
+Waiting for authorization...
+Login successful!
+Account: user@example.com
+```
+
+Flow:
+1. Displays activation URL and code
+2. User visits URL on any device
+3. User enters code and grants permissions
+4. Weaver polls for completion
+
+### Token Paste (Anthropic, OpenAI)
+
+For providers without OAuth or manual token entry:
+
+```bash
+$ weaver auth login --provider anthropic
+
+Paste your API token (input hidden):
+[User pastes token]
+Token saved for anthropic!
+```
+
+## Credential Storage
+
+Credentials are stored at:
+- **Location:** `~/.weaver/auth.json`
+- **Format:** Encrypted JSON
+- **Permissions:** 0600 (owner read/write only)
+
+Structure:
+```json
+{
+  "credentials": {
+    "openai": {
+      "auth_method": "oauth",
+      "access_token": "...",
+      "refresh_token": "...",
+      "expires_at": "2026-03-15T10:30:00Z",
+      "account_id": "user@example.com"
+    },
+    "anthropic": {
+      "auth_method": "token",
+      "access_token": "sk-ant-..."
+    }
+  }
+}
+```
+
+## Token Refresh
+
+Weaver automatically refreshes OAuth tokens:
+- **Trigger:** When token expires or needs refresh
+- **Mechanism:** Uses stored refresh token
+- **Fallback:** Prompts for re-authentication if refresh fails
+
+## Examples
+
+<CodeGroup>
+```bash OpenAI browser login
+$ weaver auth login --provider openai
+
+Opening browser for authentication...
+Login successful!
+Account: developer@example.com
+```
+
+```bash OpenAI device code login
+$ weaver auth login --provider openai --device-code
+
+Please visit: https://auth.openai.com/activate
+Enter code: WXYZ-1234
+
+Waiting for authorization...
+Login successful!
+Account: developer@example.com
+```
+
+```bash Anthropic token
+$ weaver auth login --provider anthropic
+
+Paste your API token (input hidden):
+Token saved for anthropic!
+```
+
+```bash Logout specific
+$ weaver auth logout --provider openai
+Logged out from openai
+```
+
+```bash Logout all
+$ weaver auth logout
+Logged out from all providers
+```
+
+```bash Check status
+$ weaver auth status
+
+Authenticated Providers:
+------------------------
+  openai:
+    Method: oauth
+    Status: active
+    Account: developer@example.com
+    Expires: 2026-03-15 10:30
+  
+  anthropic:
+    Method: token
+    Status: active
+```
+
+```bash No credentials
+$ weaver auth status
+
+No authenticated providers.
+Run: weaver auth login --provider <name>
+```
+</CodeGroup>
+
+## Status Values
+
+| Status | Description |
+|--------|-------------|
+| active | Token is valid and not expiring soon |
+| needs refresh | OAuth token approaching expiry |
+| expired | OAuth token expired (will auto-refresh) |
+
+## Integration with Config
+
+When you authenticate via `auth login`, Weaver updates `config.json`:
+
+```json
+"providers": {
+  "openai": {
+    "auth_method": "oauth",  // Set automatically
+    "api_key": ""           // Not used when auth_method is oauth
+  },
+  "anthropic": {
+    "auth_method": "token", // Set automatically
+    "api_key": ""           // Not used when auth_method is token
+  }
+}
+```
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Success |
+| 1 | Invalid provider |
+| 1 | Authentication failed |
+| 1 | Failed to save credentials |
+| 1 | Failed to load auth store |
+
+## Error Handling
+
+### Missing Provider
+
+```bash
+Error: --provider is required
+Supported providers: openai, anthropic
+```
+
+### Unsupported Provider
+
+```bash
+Unsupported provider: gemini
+Supported providers: openai, anthropic
+```
+
+### OAuth Failure
+
+```bash
+Login failed: user denied consent
+```
+
+### Token Paste Error
+
+```bash
+Login failed: invalid token format
+```
+
+### Credential Save Error
+
+```bash
+Failed to save credentials: permission denied
+```
+Ensure `~/.weaver/` directory has correct permissions.
+
+## Security Best Practices
+
+<Warning>
+  Never share `~/.weaver/auth.json` or commit it to version control.
+</Warning>
+
+<Steps>
+  <Step title="Use OAuth when available">
+    OAuth tokens can be revoked and have automatic refresh.
+  </Step>
+  
+  <Step title="Rotate tokens regularly">
+    Logout and re-login periodically for manual tokens.
+  </Step>
+  
+  <Step title="Protect auth.json">
+    Ensure file has 0600 permissions:
+    ```bash
+    chmod 600 ~/.weaver/auth.json
+    ```
+  </Step>
+</Steps>
+
+## Related Commands
+
+- [`weaver status`](/api/cli/overview#status) - Shows auth status in system overview
+- [`weaver onboard`](/api/cli/onboard) - Initial setup without auth

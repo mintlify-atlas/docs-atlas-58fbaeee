@@ -1,0 +1,216 @@
+---
+title: 'Image Generation Tool'
+description: 'Generate images using Gemini 3 Pro Image (Nano Banana Pro)'
+---
+
+The `generate_image` tool creates high-quality photorealistic images using an advanced AI image generation model.
+
+## generate_image
+
+Generate or edit images using Gemini 3 Pro Image (Nano Banana Pro).
+
+### Input Parameters
+
+<ParamField path="prompt" type="string" required>
+  Image description or edit instructions. The prompt is automatically enhanced with professional photography and rendering techniques.
+</ParamField>
+
+<ParamField path="resolution" type="string" default="1K">
+  Output resolution:
+  - `1K` - Standard resolution (1024px)
+  - `2K` - High resolution (2048px)
+  - `4K` - Ultra-high resolution (4096px)
+</ParamField>
+
+<ParamField path="aspect_ratio" type="string" default="1:1">
+  Image aspect ratio:
+  - `1:1` - Square
+  - `3:4` - Portrait (standard photo)
+  - `4:3` - Landscape (standard photo)
+  - `9:16` - Vertical (mobile/story)
+  - `16:9` - Widescreen (desktop/video)
+</ParamField>
+
+### Response
+
+Returns image as base64-encoded data URI.
+
+<ResponseField name="image" type="string">
+  Data URI with format: `data:image/png;base64,{base64_data}`
+  
+  **For LLM:** Full data URI prefixed with `IMAGE_GENERATED:`
+  
+  **For User:** Confirmation message: `I've generated the image based on your prompt: "{prompt}"`
+</ResponseField>
+
+### Usage Examples
+
+**Basic generation:**
+```json
+{
+  "prompt": "A serene mountain landscape at sunset"
+}
+```
+
+**High resolution portrait:**
+```json
+{
+  "prompt": "Professional headshot of a software engineer",
+  "resolution": "2K",
+  "aspect_ratio": "3:4"
+}
+```
+
+**Widescreen scene:**
+```json
+{
+  "prompt": "Futuristic city skyline with flying cars",
+  "resolution": "4K",
+  "aspect_ratio": "16:9"
+}
+```
+
+### Prompt Enhancement
+
+User prompts are automatically enhanced with professional art direction to ensure high-quality photorealistic output:
+
+**Input prompt:**
+```
+"A cat sitting on a windowsill"
+```
+
+**Enhanced prompt sent to model:**
+```
+Subject: A cat sitting on a windowsill.
+Camera Gear: Leica M11, Hasselblad X2D, 85mm Prime f/1.2.
+Lighting: Rembrandt lighting, volumetric god rays, high-key studio, cinematic rim light.
+Aesthetic: Photorealistic, 8k resolution, highly detailed skin texture, soft bokeh background, subsurface scattering, Octane Render, Ray-traced global illumination.
+Composition: Minimalist, strong central subject, purposeful negative space, high-end editorial and cinematic standards.
+Style: Avoid generic "AI-style" neon/purple tropes. No purple-blue gradients. No colored shadows.
+
+User Prompt: "A cat sitting on a windowsill"
+```
+
+### Enhancement Features
+
+**Camera equipment simulation:**
+- Professional camera bodies (Leica M11, Hasselblad X2D)
+- Premium lens characteristics (85mm Prime f/1.2)
+- Shallow depth of field and bokeh
+
+**Lighting techniques:**
+- Rembrandt lighting for dramatic shadows
+- Volumetric god rays for atmospheric depth
+- High-key studio lighting options
+- Cinematic rim lighting
+
+**Rendering quality:**
+- 8K resolution detail level
+- Subsurface scattering for realistic skin/materials
+- Octane Render quality standards
+- Ray-traced global illumination
+
+**Composition principles:**
+- Minimalist aesthetic
+- Strong central subject focus
+- Purposeful negative space
+- Editorial and cinematic standards
+
+**Style constraints:**
+- Avoids generic "AI art" aesthetics
+- No purple/blue gradients or neon colors
+- No colored shadows
+- Natural, photorealistic output
+
+### File Handling
+
+**Temporary storage:**
+- Generated images are saved to: `{workspace}/generated/gen-{timestamp}.png`
+- Timestamp format: `20060102-150405` (YYYYMMDD-HHMMSS)
+- Files are automatically deleted after conversion to data URI
+
+**Example filename:**
+```
+/workspace/generated/gen-20260301-143022.png
+```
+
+### Error Conditions
+
+- `Image generation failed: {error}` - Model API error or generation failure
+- `Failed to read generated image: {error}` - File system error after generation
+
+### Implementation Details
+
+**Generation script:**
+- Uses Python UV runtime for dependency management
+- Script location: `/usr/lib/node_modules/openclaw/skills/nano-banana-pro/scripts/generate_image.py`
+- Communicates with Gemini 3 Pro Image API
+
+**Command structure:**
+```bash
+uv run /path/to/generate_image.py \
+  --prompt "enhanced prompt" \
+  --filename /path/to/output.png \
+  --resolution 1K \
+  --api-key {api_key}
+```
+
+### Configuration Requirements
+
+**API Key:**
+- Tool requires valid API key for Gemini 3 Pro Image
+- Configured during tool initialization
+
+**Workspace:**
+- Must have write permissions to workspace directory
+- Requires `generated/` subdirectory (created automatically)
+
+**Dependencies:**
+- Python UV runtime
+- Image generation script installation
+- Network access to model API
+
+### Performance Considerations
+
+**Generation time by resolution:**
+- **1K:** ~5-10 seconds
+- **2K:** ~10-20 seconds  
+- **4K:** ~20-40 seconds
+
+**File sizes:**
+- **1K:** ~500 KB - 2 MB
+- **2K:** ~2 MB - 5 MB
+- **4K:** ~5 MB - 15 MB
+
+<Note>
+  Generation times are approximate and depend on prompt complexity, API load, and network latency.
+</Note>
+
+### Best Practices
+
+**Prompt writing:**
+- Be specific and descriptive
+- Mention style, mood, and setting
+- Enhancement handles technical details automatically
+
+**Good prompts:**
+- "Mountain landscape at golden hour with dramatic clouds"
+- "Close-up portrait of elderly man with weathered face"
+- "Modern minimalist living room with natural light"
+
+**Avoid vague prompts:**
+- "Nice picture" (too generic)
+- "Something cool" (no direction)
+- "AI art" (conflicts with enhancement style)
+
+**Resolution selection:**
+- Use **1K** for quick previews and web display
+- Use **2K** for high-quality prints and presentations  
+- Use **4K** for maximum detail and professional use
+
+**Aspect ratio guide:**
+- **1:1** - Social media posts, profile pictures
+- **3:4** - Portrait photography, print photos
+- **4:3** - Traditional displays, presentations
+- **9:16** - Mobile apps, Instagram stories
+- **16:9** - Desktop wallpapers, video thumbnails

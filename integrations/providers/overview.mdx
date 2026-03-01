@@ -1,0 +1,145 @@
+---
+title: Provider Overview
+description: Configure LLM providers for Weaver's AI agent orchestration
+---
+
+Weaver supports multiple LLM providers through a unified interface. Each provider can be configured with API keys, custom endpoints, and specific authentication methods.
+
+## Supported Providers
+
+Weaver integrates with the following LLM providers:
+
+- **[OpenAI](/integrations/providers/openai)** - GPT-4, GPT-5 models with OAuth and API key authentication
+- **[Anthropic](/integrations/providers/anthropic)** - Claude models with native SDK support
+- **[Google Gemini](/integrations/providers/gemini)** - Gemini models with API key or GCP ADC authentication
+- **[OpenRouter](/integrations/providers/openrouter)** - Unified access to multiple model providers
+- **[Local Models](/integrations/providers/local)** - Ollama, vLLM, and self-hosted deployments
+
+## Configuration Methods
+
+Weaver supports three configuration methods:
+
+### 1. Configuration File
+
+Add provider settings to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "openai": {
+      "api_key": "sk-...",
+      "api_base": "https://api.openai.com/v1"
+    },
+    "anthropic": {
+      "api_key": "sk-ant-..."
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "openai",
+      "model": "gpt-4",
+      "max_tokens": 8192,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+### 2. Environment Variables
+
+Set environment variables in `.env`:
+
+```bash
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+### 3. CLI Authentication
+
+Use OAuth for supported providers:
+
+```bash
+weaver auth login --provider openai
+weaver auth login --provider anthropic
+```
+
+## Provider Selection
+
+Weaver automatically selects the provider based on:
+
+1. **Explicit provider configuration** in `config.json`
+2. **Model name prefix** (e.g., `openai/gpt-4`, `anthropic/claude-3`)
+3. **Model family detection** (e.g., models containing "gpt", "claude", "gemini")
+4. **Fallback to OpenRouter** if configured
+
+## Common Configuration Options
+
+All providers support these options:
+
+<ParamField path="api_key" type="string">
+  Provider API key for authentication
+</ParamField>
+
+<ParamField path="api_base" type="string">
+  Custom API endpoint URL (optional)
+</ParamField>
+
+<ParamField path="proxy" type="string">
+  HTTP/HTTPS proxy URL (optional)
+</ParamField>
+
+<ParamField path="auth_method" type="string">
+  Authentication method: `api_key`, `oauth`, `token`, or provider-specific
+</ParamField>
+
+## Model Parameters
+
+Configure default model behavior in the agents section:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "gpt-4",
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  }
+}
+```
+
+<ParamField path="model" type="string">
+  Model identifier (e.g., `gpt-4`, `claude-sonnet-4-5-20250929`, `gemini-3-flash-preview`)
+</ParamField>
+
+<ParamField path="max_tokens" type="integer" default="8192">
+  Maximum tokens in model response
+</ParamField>
+
+<ParamField path="temperature" type="float" default="0.7">
+  Sampling temperature (0.0 to 2.0)
+</ParamField>
+
+<ParamField path="max_tool_iterations" type="integer" default="20">
+  Maximum tool calling iterations per agent execution
+</ParamField>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Setup" icon="circle" href="/integrations/providers/openai">
+    Configure GPT models with OAuth or API keys
+  </Card>
+  <Card title="Anthropic Setup" icon="circle" href="/integrations/providers/anthropic">
+    Set up Claude models with native SDK
+  </Card>
+  <Card title="Gemini Setup" icon="circle" href="/integrations/providers/gemini">
+    Use Google's Gemini models
+  </Card>
+  <Card title="Local Models" icon="circle" href="/integrations/providers/local">
+    Run models locally with Ollama or vLLM
+  </Card>
+</CardGroup>

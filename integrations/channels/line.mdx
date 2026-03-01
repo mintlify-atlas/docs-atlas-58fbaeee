@@ -1,0 +1,357 @@
+---
+title: LINE Channel Integration
+description: Connect Weaver to LINE Official Account using the Messaging API with webhook support
+---
+
+The LINE channel enables Weaver to interact through LINE Official Accounts using the Messaging API. It supports webhooks for message reception, reply and push APIs for sending, and features like quote replies and loading animations.
+
+## Prerequisites
+
+- A LINE account
+- Access to [LINE Developers Console](https://developers.line.biz/)
+- A publicly accessible HTTPS endpoint for webhooks (or use ngrok for testing)
+
+## Creating a LINE Official Account
+
+1. **Create a LINE Developers Account**
+   - Go to [https://developers.line.biz/](https://developers.line.biz/)
+   - Log in with your LINE account
+   - Accept the terms and conditions
+
+2. **Create a Provider**
+   - Click "Create" on the Providers page
+   - Enter a provider name (e.g., "My Company")
+
+3. **Create a Messaging API Channel**
+   - Click "Create Channel"
+   - Select "Messaging API"
+   - Fill in the required information:
+     - Channel name: Your bot's name
+     - Channel description: Brief description
+     - Category: Select appropriate category
+     - Subcategory: Select subcategory
+   - Upload channel icon (optional)
+   - Click "Create"
+
+4. **Get Channel Access Token**
+   - Go to your channel's "Messaging API" tab
+   - Under "Channel access token", click "Issue"
+   - **Save this token** - starts with a long string
+
+5. **Get Channel Secret**
+   - In the "Basic settings" tab
+   - Find "Channel secret"
+   - **Save this secret**
+
+6. **Configure Webhook**
+   - In "Messaging API" tab
+   - Set "Webhook URL" to your server endpoint:
+     ```
+     https://your-server.com/webhook/line
+     ```
+   - Enable "Use webhook"
+   - Disable "Auto-reply messages" (important!)
+   - Disable "Greeting messages" (optional)
+
+## Configuration
+
+Add the LINE channel to your `config.yaml`:
+
+```yaml
+channels:
+  line:
+    enabled: true
+    channel_secret: "YOUR_CHANNEL_SECRET"
+    channel_access_token: "YOUR_CHANNEL_ACCESS_TOKEN"
+    webhook_host: "0.0.0.0"  # Listen on all interfaces
+    webhook_port: 8080
+    webhook_path: "/webhook/line"
+    allow_from:
+      - "U1234567890abcdef1234567890abcdef"  # LINE user IDs
+```
+
+### Configuration Options
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable LINE channel |
+| `channel_secret` | string | Yes | Channel secret for signature verification |
+| `channel_access_token` | string | Yes | Channel access token for API |
+| `webhook_host` | string | No | Host to bind webhook server (default: `0.0.0.0`) |
+| `webhook_port` | int | No | Port for webhook server (default: `8080`) |
+| `webhook_path` | string | No | Webhook endpoint path (default: `/webhook/line`) |
+| `allow_from` | array | No | Allowed LINE user IDs |
+
+## User ID Format
+
+LINE uses 33-character user IDs like `U1234567890abcdef1234567890abcdef`.
+
+**Finding User IDs:**
+1. Have the user message your bot
+2. Check Weaver logs:
+   ```
+   Received message sender_id=U1234567890abcdef1234567890abcdef
+   ```
+
+## Webhook Setup
+
+### For Production (Public Server)
+
+1. **Ensure HTTPS**: LINE requires HTTPS for webhooks
+2. **Configure reverse proxy** (nginx example):
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name your-server.com;
+       
+       ssl_certificate /path/to/cert.pem;
+       ssl_certificate_key /path/to/key.pem;
+       
+       location /webhook/line {
+           proxy_pass http://127.0.0.1:8080;
+           proxy_set_header X-Line-Signature $http_x_line_signature;
+       }
+   }
+   ```
+
+3. **Set webhook URL in LINE Console**:
+   ```
+   https://your-server.com/webhook/line
+   ```
+
+### For Development (ngrok)
+
+1. **Install ngrok**: [https://ngrok.com/](https://ngrok.com/)
+
+2. **Start Weaver** (listens on port 8080 by default)
+
+3. **Start ngrok**:
+   ```bash
+   ngrok http 8080
+   ```
+
+4. **Copy HTTPS URL** from ngrok output:
+   ```
+   Forwarding: https://abcd1234.ngrok.io -> http://localhost:8080
+   ```
+
+5. **Set in LINE Console**:
+   ```
+   https://abcd1234.ngrok.io/webhook/line
+   ```
+
+6. **Verify webhook** in LINE Console (should show success)
+
+## Supported Features
+
+### Message Types
+
+- **Text Messages** - Full support with quote replies
+- **Images** - Downloaded as `image.jpg`
+- **Audio** - Downloaded as `audio.m4a`
+- **Video** - Downloaded as `video.mp4`
+- **Files** - Metadata only (no content download)
+- **Stickers** - Detected as `[sticker]`
+
+### Bot Behavior
+
+**1:1 Chats:**
+- Bot responds to all messages
+- No mention required
+
+**Group Chats:**
+- Bot only responds when @mentioned
+- Mention detection uses display name or user ID
+- Mention is stripped from message before processing
+
+### Reply Features
+
+- **Reply API**: Used first (free, 25-second validity)
+- **Push API**: Fallback if reply token expires
+- **Quote Replies**: Original message quoted in response
+- **Loading Animation**: 60-second loading indicator shown
+
+## Message Sending
+
+LINE channel uses a two-tier sending strategy:
+
+1. **Reply API** (Free)
+   - Valid for ~25 seconds after receiving message
+   - Cached and used automatically if available
+   - No additional cost
+
+2. **Push API** (Paid)
+   - Used when reply token expired or unavailable
+   - Requires messaging plan for high volumes
+   - First 500 messages/month free (varies by region)
+
+## Quote Replies
+
+When configured, bot responses quote the original message:
+
+```yaml
+User: Hello bot!
+Bot: > Hello bot!
+     Hi! How can I help you?
+```
+
+Quote tokens are automatically captured and used in replies.
+
+## Mention Detection
+
+In group chats, the bot detects mentions by:
+
+1. **Mention Metadata**: LINE's mention object (primary)
+2. **Display Name**: Fallback text-based detection using `@BotName`
+3. **User ID Match**: Matches bot's user ID from mention data
+
+**Example:**
+```
+User: @WeaverBot what is the weather?
+Bot receives: what is the weather?
+```
+
+The `@WeaverBot` mention is stripped before processing.
+
+## Signature Verification
+
+All webhook requests are verified using HMAC-SHA256:
+
+1. LINE signs requests with your channel secret
+2. Weaver verifies the `X-Line-Signature` header
+3. Invalid signatures are rejected (403 Forbidden)
+
+This prevents unauthorized webhook calls.
+
+## Error Handling
+
+### Common Issues
+
+**Invalid Signature**
+```
+Invalid webhook signature
+```
+- Verify `channel_secret` is correct
+- Ensure webhook request is from LINE servers
+
+**Webhook Not Reachable**
+```
+LINE Console: Webhook verification failed
+```
+- Check webhook URL is publicly accessible
+- Verify HTTPS certificate is valid
+- Ensure firewall allows inbound connections
+- Test with: `curl -X POST https://your-server.com/webhook/line`
+
+**Missing Bot Info**
+```
+Failed to fetch bot info (mention detection disabled)
+```
+- Non-fatal warning
+- Bot still works but may not detect mentions properly
+- Verify channel access token is valid
+
+**Failed to Send Message**
+```
+LINE API error (status 401): {...}
+```
+- Check channel access token
+- Verify token has not expired
+- Ensure channel is not deleted/suspended
+
+## Security Considerations
+
+1. **Signature Verification**: Always enabled, validates all webhooks
+2. **Token Security**: Keep channel secret and access token secure
+3. **HTTPS Required**: LINE mandates HTTPS for production webhooks
+4. **Allowlist**: Use `allow_from` to restrict bot access
+5. **IP Whitelisting**: Consider restricting to LINE's webhook IPs
+
+## Metadata Captured
+
+Each LINE message includes:
+
+```yaml
+metadata:
+  platform: "line"
+  source_type: "user"  # or "group", "room"
+  message_id: "1234567890123"
+```
+
+## Example Configurations
+
+### Production Setup
+```yaml
+channels:
+  line:
+    enabled: true
+    channel_secret: "abc123def456ghi789jkl012mno345pq"
+    channel_access_token: "abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQR=="
+    webhook_host: "0.0.0.0"
+    webhook_port: 8080
+    webhook_path: "/webhook/line"
+    allow_from:
+      - "U1234567890abcdef1234567890abcdef"
+```
+
+### Development with ngrok
+```yaml
+channels:
+  line:
+    enabled: true
+    channel_secret: "abc123def456ghi789jkl012mno345pq"
+    channel_access_token: "abcdefg..."
+    webhook_host: "127.0.0.1"
+    webhook_port: 8080
+```
+
+Then run:
+```bash
+ngrok http 8080
+```
+
+## Logging
+
+Monitor LINE activity:
+
+```bash
+# View LINE-specific logs
+grep "line" weaver.log
+
+# Monitor webhook requests
+tail -f weaver.log | grep line
+```
+
+Log examples:
+```
+Starting LINE channel (Webhook Mode)
+Bot info fetched bot_user_id=U1234567890abcdef1234567890abcdef basic_id=@abc123
+LINE webhook server listening addr=0.0.0.0:8080 path=/webhook/line
+Received message sender_id=U1234567890abcdef1234567890abcdef message_type=text
+Message sent via Reply API chat_id=U1234567890abcdef1234567890abcdef quoted=true
+```
+
+## Cost Considerations
+
+- **Reply API**: Free (use within 25 seconds of receiving message)
+- **Push API**: 
+  - Free tier: First 500 messages/month (Japan)
+  - Paid plans available for higher volumes
+  - Check [LINE Official Account pricing](https://www.linebiz.com/jp/service/line-official-account/)
+
+Weaver automatically uses Reply API when possible to minimize costs.
+
+## Best Practices
+
+1. **Respond Quickly**: Use Reply API (free) by responding within 25 seconds
+2. **Disable Auto-Reply**: Turn off LINE's auto-reply to avoid duplicate responses
+3. **Add Rich Menu**: Configure rich menu in LINE Console for user guidance
+4. **Monitor Costs**: Track Push API usage if on paid plan
+5. **Test Webhooks**: Use "Verify" button in LINE Console
+6. **Handle Groups Carefully**: Only respond to mentions to avoid spam
+
+## Next Steps
+
+- [Configure Agents](/core/agents) to respond on LINE
+- [Set up Quote Replies](/features/quote-replies) for better context
+- [Enable Multimodal](/features/multimodal) for image understanding

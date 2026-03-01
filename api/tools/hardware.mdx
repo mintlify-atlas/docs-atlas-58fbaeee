@@ -1,0 +1,378 @@
+---
+title: 'Hardware Tools'
+description: 'I2C and SPI bus communication for embedded systems (Linux only)'
+---
+
+Hardware tools provide low-level bus communication for embedded Linux systems like Raspberry Pi, BeagleBone, and industrial IoT devices.
+
+<Warning>
+  Hardware tools are **Linux-only** and require appropriate kernel drivers and permissions.
+</Warning>
+
+## i2c
+
+Interact with I2C bus devices for reading sensors and controlling peripherals.
+
+### Input Parameters
+
+<ParamField path="action" type="string" required>
+  Action to perform:
+  - `detect` - List available I2C buses
+  - `scan` - Find devices on a bus
+  - `read` - Read bytes from device
+  - `write` - Send bytes to device
+</ParamField>
+
+<ParamField path="bus" type="string">
+  I2C bus number (e.g., "1" for /dev/i2c-1). Required for scan/read/write.
+</ParamField>
+
+<ParamField path="address" type="integer">
+  7-bit I2C device address (0x03-0x77). Required for read/write.
+</ParamField>
+
+<ParamField path="register" type="integer">
+  Register address to read from or write to. If set, sends register byte before read/write.
+</ParamField>
+
+<ParamField path="data" type="array">
+  Bytes to write (0-255 each). Required for write action.
+</ParamField>
+
+<ParamField path="length" type="integer" default="1">
+  Number of bytes to read (1-256). Used with read action.
+</ParamField>
+
+<ParamField path="confirm" type="boolean">
+  Must be `true` for write operations. Safety guard to prevent accidental writes.
+</ParamField>
+
+### Actions
+
+#### detect
+
+List available I2C buses by scanning `/dev/i2c-*` devices.
+
+**Example:**
+```json
+{
+  "action": "detect"
+}
+```
+
+**Response:**
+```json
+[
+  {"path": "/dev/i2c-0", "bus": "0"},
+  {"path": "/dev/i2c-1", "bus": "1"}
+]
+```
+
+#### scan
+
+Scan an I2C bus for connected devices (addresses 0x03-0x77).
+
+**Example:**
+```json
+{
+  "action": "scan",
+  "bus": "1"
+}
+```
+
+**Response:**
+```json
+{
+  "bus": "1",
+  "devices": [
+    {"address": "0x38", "description": "Possible sensor/peripheral"},
+    {"address": "0x68", "description": "Possible sensor/peripheral"}
+  ]
+}
+```
+
+#### read
+
+Read bytes from an I2C device.
+
+**Read from device (no register):**
+```json
+{
+  "action": "read",
+  "bus": "1",
+  "address": 56,
+  "length": 4
+}
+```
+
+**Read from specific register:**
+```json
+{
+  "action": "read",
+  "bus": "1",
+  "address": 56,
+  "register": 0,
+  "length": 6
+}
+```
+
+**Response:**
+```json
+{
+  "bus": "1",
+  "address": "0x38",
+  "register": "0x00",
+  "data": [28, 123, 45, 67, 89, 12],
+  "hex": "1c 7b 2d 43 59 0c"
+}
+```
+
+#### write
+
+Write bytes to an I2C device. **Requires `confirm: true` for safety.**
+
+**Write to device:**
+```json
+{
+  "action": "write",
+  "bus": "1",
+  "address": 56,
+  "data": [0x03, 0x01],
+  "confirm": true
+}
+```
+
+**Write to specific register:**
+```json
+{
+  "action": "write",
+  "bus": "1",
+  "address": 56,
+  "register": 0,
+  "data": [0xFF],
+  "confirm": true
+}
+```
+
+### Error Conditions
+
+- `I2C is only supported on Linux` - Non-Linux OS detected
+- `action is required` - Missing action parameter
+- `unknown action: {action}` - Invalid action value
+- `bus is required` - Missing bus for scan/read/write
+- `invalid bus identifier` - Bus must be numeric (e.g., "1")
+- `address is required` - Missing address for read/write
+- `address must be in valid 7-bit range (0x03-0x77)` - Invalid address
+- `data is required for write` - Missing data array
+- `confirm must be true for write operations` - Safety confirmation missing
+
+### Platform Requirements
+
+**Kernel modules:**
+```bash
+sudo modprobe i2c-dev
+```
+
+**Permissions:**
+```bash
+sudo usermod -aG i2c $USER
+# or
+sudo chmod 666 /dev/i2c-*
+```
+
+**Device tree** (Raspberry Pi):
+```bash
+# Enable I2C in /boot/config.txt
+dtparam=i2c_arm=on
+```
+
+---
+
+## spi
+
+Interact with SPI bus devices for high-speed peripheral communication.
+
+### Input Parameters
+
+<ParamField path="action" type="string" required>
+  Action to perform:
+  - `list` - Find available SPI devices
+  - `transfer` - Full-duplex send/receive
+  - `read` - Receive bytes (sends zeros)
+</ParamField>
+
+<ParamField path="device" type="string">
+  SPI device identifier (e.g., "2.0" for /dev/spidev2.0). Required for transfer/read.
+</ParamField>
+
+<ParamField path="speed" type="integer" default="1000000">
+  SPI clock speed in Hz (1 Hz - 125 MHz). Default: 1 MHz.
+</ParamField>
+
+<ParamField path="mode" type="integer" default="0">
+  SPI mode (0-3). Sets CPOL and CPHA:
+  - Mode 0: CPOL=0, CPHA=0
+  - Mode 1: CPOL=0, CPHA=1
+  - Mode 2: CPOL=1, CPHA=0
+  - Mode 3: CPOL=1, CPHA=1
+</ParamField>
+
+<ParamField path="bits" type="integer" default="8">
+  Bits per word (1-32). Default: 8.
+</ParamField>
+
+<ParamField path="data" type="array">
+  Bytes to send (0-255 each). Required for transfer action.
+</ParamField>
+
+<ParamField path="length" type="integer">
+  Number of bytes to read (1-4096). Required for read action.
+</ParamField>
+
+<ParamField path="confirm" type="boolean">
+  Must be `true` for transfer operations. Safety guard to prevent accidental writes.
+</ParamField>
+
+### Actions
+
+#### list
+
+Find available SPI devices by scanning `/dev/spidev*`.
+
+**Example:**
+```json
+{
+  "action": "list"
+}
+```
+
+**Response:**
+```json
+[
+  {"path": "/dev/spidev0.0", "device": "0.0"},
+  {"path": "/dev/spidev2.0", "device": "2.0"}
+]
+```
+
+#### transfer
+
+Full-duplex SPI transfer (simultaneous send and receive).
+
+**Example:**
+```json
+{
+  "action": "transfer",
+  "device": "2.0",
+  "speed": 1000000,
+  "mode": 0,
+  "bits": 8,
+  "data": [0x9F, 0x00, 0x00],
+  "confirm": true
+}
+```
+
+**Response:**
+```json
+{
+  "device": "2.0",
+  "speed": 1000000,
+  "mode": 0,
+  "bits": 8,
+  "sent": [159, 0, 0],
+  "received": [239, 64, 24],
+  "hex": "ef 40 18"
+}
+```
+
+#### read
+
+Read bytes from SPI device (sends zeros during read).
+
+**Example:**
+```json
+{
+  "action": "read",
+  "device": "2.0",
+  "length": 8,
+  "speed": 500000
+}
+```
+
+**Response:**
+```json
+{
+  "device": "2.0",
+  "length": 8,
+  "data": [0, 12, 34, 56, 78, 90, 123, 255],
+  "hex": "00 0c 22 38 4e 5a 7b ff"
+}
+```
+
+### Error Conditions
+
+- `SPI is only supported on Linux` - Non-Linux OS detected
+- `action is required` - Missing action parameter
+- `unknown action: {action}` - Invalid action value
+- `device is required` - Missing device for transfer/read
+- `invalid device identifier: must be in format "X.Y"` - Invalid device format
+- `speed must be between 1 Hz and 125 MHz` - Invalid speed
+- `mode must be 0-3` - Invalid mode
+- `bits must be between 1 and 32` - Invalid bits per word
+- `data is required for transfer` - Missing data array
+- `length is required for read` - Missing length parameter
+- `confirm must be true for transfer operations` - Safety confirmation missing
+
+### Platform Requirements
+
+**Kernel modules:**
+```bash
+sudo modprobe spidev
+```
+
+**Permissions:**
+```bash
+sudo usermod -aG spi $USER
+# or
+sudo chmod 666 /dev/spidev*
+```
+
+**Device tree** (Raspberry Pi):
+```bash
+# Enable SPI in /boot/config.txt
+dtparam=spi=on
+```
+
+### SPI Mode Reference
+
+| Mode | CPOL | CPHA | Clock Polarity | Clock Phase |
+|------|------|------|----------------|-------------|
+| 0 | 0 | 0 | Idle low | Sample on leading edge |
+| 1 | 0 | 1 | Idle low | Sample on trailing edge |
+| 2 | 1 | 0 | Idle high | Sample on leading edge |
+| 3 | 1 | 1 | Idle high | Sample on trailing edge |
+
+### Common Use Cases
+
+**Flash memory (W25Q series):**
+```json
+{
+  "action": "transfer",
+  "device": "0.0",
+  "speed": 10000000,
+  "mode": 0,
+  "data": [0x9F, 0x00, 0x00, 0x00],
+  "confirm": true
+}
+```
+
+**ADC (MCP3008):**
+```json
+{
+  "action": "transfer",
+  "device": "0.0",
+  "speed": 1000000,
+  "mode": 0,
+  "data": [0x01, 0x80, 0x00],
+  "confirm": true
+}
+```

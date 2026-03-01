@@ -1,0 +1,241 @@
+---
+title: Google Gemini
+description: Configure Google Gemini models for Weaver
+---
+
+Weaver supports Google's Gemini models through both API key authentication and Google Cloud Application Default Credentials (ADC).
+
+## Authentication Methods
+
+### API Key Authentication
+
+The simplest method using a Gemini API key from Google AI Studio.
+
+#### 1. Get API Key
+
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create a new API key
+3. Copy the key
+
+#### 2. Configure Weaver
+
+**Option A: Configuration File**
+
+Add to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "gemini": {
+      "api_key": "YOUR_GEMINI_API_KEY",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview"
+    }
+  }
+}
+```
+
+**Option B: Environment Variable**
+
+Add to `.env`:
+
+```bash
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+```
+
+### Google Cloud ADC Authentication
+
+Use Google Cloud Application Default Credentials for automatic token management with Vertex AI.
+
+#### 1. Set Up GCP Credentials
+
+```bash
+# Install gcloud CLI
+curl https://sdk.cloud.google.com | bash
+
+# Initialize and authenticate
+gcloud init
+gcloud auth application-default login
+```
+
+#### 2. Configure Weaver
+
+Add to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "gemini": {
+      "auth_method": "gcloud-adc",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview"
+    }
+  }
+}
+```
+
+<Note>
+  The ADC method automatically refreshes access tokens and handles GCP authentication. This is recommended for production deployments using Vertex AI.
+</Note>
+
+## Available Models
+
+Weaver supports all Gemini model variants:
+
+| Model | Description | Context Window |
+|-------|-------------|----------------|
+| `gemini-3-flash-preview` | Fast, efficient model (default) | 128K tokens |
+| `gemini-2.0-flash-exp` | Latest experimental model | 1M tokens |
+| `gemini-1.5-pro` | Most capable model | 2M tokens |
+| `gemini-1.5-flash` | Balanced speed and capability | 1M tokens |
+
+## Configuration Options
+
+<ParamField path="api_key" type="string">
+  Gemini API key from Google AI Studio
+</ParamField>
+
+<ParamField path="api_base" type="string" default="https://generativelanguage.googleapis.com/v1beta">
+  Gemini API endpoint URL
+</ParamField>
+
+<ParamField path="auth_method" type="string">
+  Authentication method: `api_key` (default) or `gcloud-adc` / `adc`
+</ParamField>
+
+<ParamField path="proxy" type="string">
+  HTTP/HTTPS proxy URL for API requests (optional)
+</ParamField>
+
+## Model Parameters
+
+Configure model behavior:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "gemini-3-flash-preview",
+      "max_tokens": 8192,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+<ParamField path="max_tokens" type="integer" default="8192">
+  Maximum tokens in response (uses `max_completion_tokens` for some models)
+</ParamField>
+
+<ParamField path="temperature" type="float" default="0.7">
+  Controls randomness in responses (0.0 = deterministic, 2.0 = very random)
+</ParamField>
+
+## Usage Examples
+
+### Using Specific Models
+
+Specify model in conversation:
+
+```bash
+# Use Flash model for speed
+weaver chat --model gemini-3-flash-preview
+
+# Use Pro model for complex tasks
+weaver chat --model gemini-1.5-pro
+```
+
+### With Proxy
+
+Configure proxy for restricted networks:
+
+```json
+{
+  "providers": {
+    "gemini": {
+      "api_key": "YOUR_GEMINI_API_KEY",
+      "proxy": "http://proxy.company.com:8080"
+    }
+  }
+}
+```
+
+## Implementation Details
+
+Weaver's Gemini integration uses:
+
+- **HTTPProvider** for API key authentication with OpenAI-compatible format
+- **VertexAIProvider** for GCP ADC authentication with automatic token refresh
+- OpenAI-compatible `/chat/completions` endpoint format
+- Automatic model namespace handling (strips `google/` prefix)
+
+Source: `pkg/providers/http_provider.go:299-417`, `pkg/providers/vertex_provider.go`
+
+## Troubleshooting
+
+### API Key Issues
+
+```bash
+# Verify API key is set
+echo $GEMINI_API_KEY
+
+# Test with curl
+curl https://generativelanguage.googleapis.com/v1beta/models \
+  -H "Authorization: Bearer $GEMINI_API_KEY"
+```
+
+### GCP ADC Issues
+
+```bash
+# Check ADC credentials
+gcloud auth application-default print-access-token
+
+# Re-authenticate if needed
+gcloud auth application-default login
+
+# Verify cloud-platform scope
+gcloud auth application-default print-access-token --scopes=https://www.googleapis.com/auth/cloud-platform
+```
+
+### Common Errors
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized">
+    - Verify your API key is correct
+    - For ADC: Run `gcloud auth application-default login`
+    - Check that the API key hasn't expired
+  </Accordion>
+  
+  <Accordion title="403 Permission Denied">
+    - Ensure Vertex AI API is enabled in your GCP project
+    - Verify your account has the necessary permissions
+    - For ADC: Check you have `cloud-platform` scope
+  </Accordion>
+  
+  <Accordion title="429 Rate Limit">
+    - Check your API quota in Google AI Studio
+    - Implement exponential backoff in your application
+    - Consider upgrading to a paid tier
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Provider Overview" icon="arrow-left" href="/integrations/providers/overview">
+    Back to all providers
+  </Card>
+  <Card title="Agent Configuration" icon="robot" href="/core-concepts/agents">
+    Configure agents with Gemini
+  </Card>
+</CardGroup>

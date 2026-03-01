@@ -1,80 +1,212 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get up and running with Weaver in under 5 minutes
 ---
 
-## Get started in three steps
+Get your first Weaver agent up and running in minutes. This guide will walk you through spawning an agent, interacting with it, and running the gateway for multi-channel support.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- Docker installed (version 20.10 or higher)
+- A Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- Basic familiarity with command-line tools
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Weaver is optimized for the `gemini-3-flash-preview` model, which offers the best balance of speed and capability for agent tasks.
 </Note>
+
+## Spawn Your First Agent
+
+The fastest way to get started is by running Weaver in Docker:
+
+<Steps>
+  <Step title="Set your API key">
+    Export your Gemini API key as an environment variable:
+
+    ```bash
+    export GEMINI_API_KEY=your_api_key_here
+    ```
+  </Step>
+
+  <Step title="Run the agent">
+    Spawn a Weaver agent with a simple task:
+
+    ```bash
+    docker run --rm \
+      -v $(pwd)/workspace:/root/.weaver/workspace \
+      -e GEMINI_API_KEY=$GEMINI_API_KEY \
+      operatoronline/weaver agent -m "Hello! What can you help me with?"
+    ```
+
+    You should see the agent boot in **&lt;1 second** and respond to your message.
+  </Step>
+
+  <Step title="Interactive mode">
+    For a conversational experience, run without the `-m` flag:
+
+    ```bash
+    docker run --rm -it \
+      -v $(pwd)/workspace:/root/.weaver/workspace \
+      -e GEMINI_API_KEY=$GEMINI_API_KEY \
+      operatoronline/weaver agent
+    ```
+
+    This starts an interactive shell where you can chat with the agent.
+  </Step>
+</Steps>
+
+## What Just Happened?
+
+When you ran the agent:
+
+1. **Fast Boot**: Weaver initialized in &lt;1s with &lt;10MB RAM footprint
+2. **Workspace Created**: A persistent workspace was mounted at `./workspace`
+3. **Tools Loaded**: The agent loaded 15+ built-in tools (file system, shell, web, etc.)
+4. **LLM Connected**: Connected to Gemini Flash for ultra-fast inference
+
+<Tip>
+  The workspace directory persists agent memory, skills, and session history. You can inspect `./workspace/sessions/` to see conversation logs.
+</Tip>
+
+## Run the Gateway
+
+For production use or multi-channel support (Telegram, Discord, Slack), run the gateway:
+
+<Steps>
+  <Step title="Create docker-compose.yml">
+    Create a `docker-compose.yml` file:
+
+    ```yaml
+    services:
+      weaver-gateway:
+        image: operatoronline/weaver:latest
+        command: gateway
+        environment:
+          - GEMINI_API_KEY=${GEMINI_API_KEY}
+          - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}  # Optional
+          - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}    # Optional
+        volumes:
+          - ./workspace:/root/.weaver/workspace
+          - ./config.json:/root/.weaver/config.json
+        ports:
+          - "18790:18790"
+        restart: unless-stopped
+    ```
+  </Step>
+
+  <Step title="Start the gateway">
+    Launch the gateway service:
+
+    ```bash
+    docker compose up -d weaver-gateway
+    ```
+
+    The gateway will:
+    - Start the agent loop
+    - Initialize all configured channels
+    - Expose REST API on port 18790
+    - Enable cron jobs and heartbeat monitoring
+  </Step>
+
+  <Step title="Verify it's running">
+    Check the health endpoint:
+
+    ```bash
+    curl http://localhost:18790/health
+    ```
+
+    You should see:
+    ```json
+    {
+      "status": "healthy",
+      "agent_running": true,
+      "tools_loaded": 16
+    }
+    ```
+  </Step>
+</Steps>
+
+## Try Some Commands
+
+Now that your agent is running, try these examples:
+
+<Accordion title="File Operations">
+  ```bash
+  docker run --rm \
+    -v $(pwd)/workspace:/root/.weaver/workspace \
+    -e GEMINI_API_KEY=$GEMINI_API_KEY \
+    operatoronline/weaver agent -m "Create a file called hello.txt with 'Hello, Weaver!'"
+  ```
+
+  Check the workspace:
+  ```bash
+  cat workspace/hello.txt
+  # Output: Hello, Weaver!
+  ```
+</Accordion>
+
+<Accordion title="Web Search">
+  ```bash
+  docker run --rm \
+    -v $(pwd)/workspace:/root/.weaver/workspace \
+    -e GEMINI_API_KEY=$GEMINI_API_KEY \
+    -e BRAVE_SEARCH_API_KEY=$BRAVE_API_KEY \
+    operatoronline/weaver agent -m "Search for the latest Go 1.23 features"
+  ```
+
+  The agent will use the web search tool to find and summarize recent information.
+</Accordion>
+
+<Accordion title="Shell Execution">
+  ```bash
+  docker run --rm \
+    -v $(pwd)/workspace:/root/.weaver/workspace \
+    -e GEMINI_API_KEY=$GEMINI_API_KEY \
+    operatoronline/weaver agent -m "What Go version is installed?"
+  ```
+
+  The agent will execute `go version` and report the result.
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Weaver locally or build from source
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize models, tools, and providers
+  </Card>
+  <Card title="Multi-Channel Setup" icon="comments" href="/guides/multi-channel-setup">
+    Connect Telegram, Discord, or Slack bots
+  </Card>
+  <Card title="Skills System" icon="puzzle-piece" href="/features/skills">
+    Extend agent capabilities with skills
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<Accordion title="Agent fails to start">
+  - Verify your API key is correct: `echo $GEMINI_API_KEY`
+  - Check Docker is running: `docker ps`
+  - Ensure the workspace directory has write permissions
+</Accordion>
+
+<Accordion title="Slow response times">
+  - Weaver is optimized for Gemini Flash. Other providers may be slower.
+  - Check your network connection to the LLM provider
+  - Monitor the logs: `docker compose logs -f weaver-gateway`
+</Accordion>
+
+<Accordion title="Tools not working">
+  - File tools require workspace mount: `-v $(pwd)/workspace:/root/.weaver/workspace`
+  - Web search requires `BRAVE_SEARCH_API_KEY` environment variable
+  - Shell commands run in restricted mode by default (see [Configuration](/guides/configuration))
+</Accordion>
+
+<Info>
+  For more help, visit the [FAQ](/resources/faq) or join the [GitHub Discussions](https://github.com/operatoronline/weaver/discussions).
+</Info>

@@ -1,0 +1,319 @@
+---
+title: Slack Channel Integration
+description: Connect Weaver to Slack workspaces using Socket Mode for real-time AI agent communication
+---
+
+The Slack channel enables Weaver to interact in Slack workspaces using Socket Mode, supporting direct messages, channel mentions, slash commands, and file uploads.
+
+## Prerequisites
+
+- A Slack workspace where you have permission to install apps
+- Admin access to create Slack apps
+
+## Creating a Slack App
+
+1. **Create New App**
+   - Go to [https://api.slack.com/apps](https://api.slack.com/apps)
+   - Click "Create New App"
+   - Choose "From scratch"
+   - Name your app (e.g., "Weaver Bot")
+   - Select your workspace
+
+2. **Enable Socket Mode**
+   - Navigate to "Socket Mode" in the left sidebar
+   - Toggle "Enable Socket Mode" to ON
+   - Generate an app-level token:
+     - Name: `weaver-socket`
+     - Scope: `connections:write`
+   - **Save the token** (starts with `xapp-`)
+
+3. **Configure OAuth & Permissions**
+   - Go to "OAuth & Permissions"
+   - Under "Bot Token Scopes", add:
+     - `app_mentions:read` - See mentions
+     - `channels:history` - View messages in public channels
+     - `channels:read` - View basic channel info
+     - `chat:write` - Send messages
+     - `files:read` - Access file information
+     - `im:history` - View messages in DMs
+     - `im:read` - View basic DM info
+     - `im:write` - Send DMs
+     - `reactions:write` - Add emoji reactions
+     - `users:read` - View user info
+
+4. **Install App to Workspace**
+   - Scroll up and click "Install to Workspace"
+   - Review permissions and click "Allow"
+   - **Save the Bot User OAuth Token** (starts with `xoxb-`)
+
+5. **Enable Event Subscriptions**
+   - Go to "Event Subscriptions"
+   - Toggle "Enable Events" to ON
+   - Under "Subscribe to bot events", add:
+     - `app_mention` - Bot was mentioned
+     - `message.im` - Direct messages to bot
+   - Save Changes
+
+6. **Optional: Create Slash Commands**
+   - Go to "Slash Commands"
+   - Click "Create New Command"
+   - Command: `/weaver`
+   - Description: "Interact with Weaver"
+   - Usage Hint: `[your message]`
+
+## Configuration
+
+Add the Slack channel to your `config.yaml`:
+
+```yaml
+channels:
+  slack:
+    enabled: true
+    bot_token: "xoxb-YOUR-BOT-TOKEN"
+    app_token: "xapp-YOUR-APP-TOKEN"
+    allow_from:
+      - "U01234ABCDE"  # Slack user IDs
+```
+
+### Configuration Options
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Slack channel |
+| `bot_token` | string | Yes | Bot User OAuth Token (`xoxb-`) |
+| `app_token` | string | Yes | App-Level Token (`xapp-`) |
+| `allow_from` | array | No | Allowed Slack user IDs |
+
+## User ID Format
+
+Slack uses alphanumeric user IDs like `U01234ABCDE`.
+
+**Finding User IDs:**
+1. Click on a user's profile in Slack
+2. Click "More" → "Copy member ID"
+3. Or check Weaver logs after a message:
+   ```
+   Received message sender_id=U01234ABCDE
+   ```
+
+## Supported Features
+
+### Message Types
+
+- **Direct Messages** - Bot responds to all DMs
+- **Channel Mentions** - Responds when @mentioned in channels
+- **Thread Replies** - Maintains conversation threads
+- **File Attachments** - Downloads and processes files
+- **Slash Commands** - Custom `/weaver` commands (if configured)
+
+### Reactions & Indicators
+
+- **👀 (eyes)**: Added when message is received
+- **✅ (check mark)**: Added when response is sent
+- **Threading**: Replies maintain thread context
+
+### File Handling
+
+1. **File Types**: All file types supported
+2. **Audio Files**: Transcribed if Groq is enabled
+3. **Authentication**: Uses bot token for private file downloads
+4. **Cleanup**: Temporary files deleted after processing
+
+## Chat ID Format
+
+Slack uses composite chat IDs:
+
+- **Direct Messages**: `{channel_id}` (e.g., `D01234ABCDE`)
+- **Channel Threads**: `{channel_id}/{thread_ts}` (e.g., `C01234ABCDE/1234567890.123456`)
+
+Weaver automatically handles this format for threading.
+
+## Audio Transcription
+
+Enable audio transcription in `config.yaml`:
+
+```yaml
+voice:
+  enabled: true
+  groq_api_key: "your-groq-api-key"
+  model: "whisper-large-v3"
+
+channels:
+  slack:
+    enabled: true
+    bot_token: "xoxb-..."
+    app_token: "xapp-..."
+```
+
+When enabled, audio files are transcribed:
+```
+[voice transcription: Transcribed audio content here]
+```
+
+If transcription fails:
+```
+[audio: filename.mp3 (transcription failed)]
+```
+
+## Bot Mention Handling
+
+The bot automatically strips its own mention from messages:
+
+**User sends:**
+```
+@WeaverBot what is the weather?
+```
+
+**Bot receives:**
+```
+what is the weather?
+```
+
+## Connection Mode: Socket Mode
+
+Weaver uses Slack's Socket Mode:
+
+- **No webhook URL required** - Bot connects via WebSocket
+- **Works behind firewalls** - Outbound connection only
+- **Real-time events** - Instant message delivery
+- **Persistent connection** - Auto-reconnects on disconnect
+
+### Why Socket Mode?
+
+- No need for public HTTPS endpoint
+- Simpler setup for development and self-hosting
+- Lower latency than HTTP webhooks
+- Built-in retry and reconnection logic
+
+## Error Handling
+
+### Common Issues
+
+**Invalid Tokens**
+```
+slack auth test failed: invalid_auth
+```
+- Verify `bot_token` starts with `xoxb-`
+- Verify `app_token` starts with `xapp-`
+- Regenerate tokens if needed
+
+**Missing Scopes**
+```
+failed to send slack message: missing_scope
+```
+- Add required scopes in OAuth & Permissions
+- Reinstall app to workspace
+
+**Socket Mode Not Enabled**
+```
+Socket Mode connection error
+```
+- Enable Socket Mode in app settings
+- Ensure app-level token has `connections:write` scope
+
+**User Not Allowed**
+```
+Message rejected by allowlist user_id: U01234ABCDE
+```
+- Add user ID to `allow_from` list
+- Or remove `allow_from` to allow all users
+
+## Security Considerations
+
+1. **Token Security**: Keep bot and app tokens secret
+2. **Scope Minimization**: Only request necessary OAuth scopes
+3. **Allowlist**: Use `allow_from` to restrict access
+4. **File Access**: Bot can only access files in channels it's invited to
+
+## Metadata Captured
+
+Each Slack message includes:
+
+```yaml
+metadata:
+  message_ts: "1234567890.123456"
+  channel_id: "C01234ABCDE"
+  thread_ts: "1234567890.123456"  # If in thread
+  platform: "slack"
+  is_mention: "true"  # If app was mentioned
+  is_command: "true"  # If slash command
+```
+
+## Example Configurations
+
+### Basic Setup
+```yaml
+channels:
+  slack:
+    enabled: true
+    bot_token: "xoxb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+    app_token: "xapp-1-A01234ABCDE-1234567890123-abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+```
+
+### With Allowlist & Transcription
+```yaml
+channels:
+  slack:
+    enabled: true
+    bot_token: "xoxb-..."
+    app_token: "xapp-..."
+    allow_from:
+      - "U01234ABCDE"  # alice
+      - "U56789FGHIJ"  # bob
+
+voice:
+  enabled: true
+  groq_api_key: "gsk_..."
+```
+
+## Logging
+
+Monitor Slack activity:
+
+```bash
+# View Slack-specific logs
+grep "slack" weaver.log
+
+# Monitor connections and messages
+tail -f weaver.log | grep slack
+```
+
+Log examples:
+```
+Starting Slack channel (Socket Mode)
+Slack bot connected bot_user_id=U01234ABCDE team=YourTeam
+Received message sender_id=U56789FGHIJ chat_id=C01234ABCDE/1234567890.123456
+Message sent channel_id=C01234ABCDE thread_ts=1234567890.123456
+```
+
+## Best Practices
+
+1. **Invite Bot to Channels**: Use `/invite @WeaverBot` in channels where you want it active
+2. **Use Threads**: Mention bot in threads to keep conversations organized
+3. **Set Display Info**: Add bot description and icon in app settings
+4. **Monitor Reactions**: Watch for 👀 and ✅ to track message flow
+5. **Test in Private Channel**: Create a test channel for development
+
+## Slash Commands
+
+If you created a `/weaver` slash command:
+
+```
+/weaver help
+/weaver list agents
+/weaver ask what is the weather?
+```
+
+Slash commands are processed like regular messages and can accept any text.
+
+## Thread Behavior
+
+- **New conversations**: Messages in channels start new threads
+- **Existing threads**: Replies stay in thread context
+- **DMs**: No threading (not supported in Slack DMs)
+
+## Next Steps
+
+- [Configure Agents](/core/agents) to respond in Slack
+- [Set up Voice Transcription](/features/voice) for audio files
+- [Customize Bot Responses](/core/prompts) for workplace context

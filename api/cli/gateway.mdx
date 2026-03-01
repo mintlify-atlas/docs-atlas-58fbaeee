@@ -1,0 +1,348 @@
+---
+title: weaver gateway
+description: Start the Weaver gateway server with channel integrations
+---
+
+The `gateway` command launches Weaver as a persistent service, enabling channel integrations (Telegram, Discord, Slack), scheduled tasks, heartbeat monitoring, and REST API access.
+
+## Usage
+
+```bash
+weaver gateway [options]
+```
+
+## Options
+
+<ParamField path="-d, --debug" type="flag">
+  Enable debug mode with verbose logging
+  
+  ```bash
+  weaver gateway --debug
+  ```
+</ParamField>
+
+## Startup Sequence
+
+When gateway starts, it displays comprehensive initialization status:
+
+```bash
+$ weaver gateway
+
+📦 Agent Status:
+  • Tools: 12 loaded
+  • Skills: 4/6 available
+✓ Channels enabled: telegram, discord
+✓ Gateway started on 0.0.0.0:8080
+Press Ctrl+C to stop
+✓ Cron service started
+✓ Heartbeat service started
+✓ Device event service started
+✓ Gateway REST API available at http://0.0.0.0:8080/chat
+✓ Health endpoints available at http://0.0.0.0:8080/health and /ready
+```
+
+## Services
+
+Gateway automatically starts multiple services:
+
+### 1. Agent Loop
+
+Core AI agent processing engine:
+- Loads tools and skills
+- Manages conversation sessions
+- Processes messages from all channels
+
+### 2. Channel Manager
+
+Integrations enabled in config:
+- **Telegram** - Bot API integration
+- **Discord** - Bot with voice support
+- **Slack** - Slack App integration
+
+Channels start only if configured with valid tokens/keys.
+
+### 3. Cron Service
+
+Scheduled task executor:
+- Loads jobs from `workspace/cron/jobs.json`
+- Executes on defined schedules
+- Delivers results to specified channels
+
+See [`weaver cron`](/api/cli/cron) for job management.
+
+### 4. Heartbeat Service
+
+Periodic health check and proactive monitoring:
+- Interval configured in `config.json`
+- Can trigger agent actions
+- Disabled by default
+
+Configuration:
+```json
+"heartbeat": {
+  "enabled": true,
+  "interval": 300000  // 5 minutes in milliseconds
+}
+```
+
+### 5. Device Event Service
+
+USB device monitoring (optional):
+- Detects device connections/disconnections
+- Can trigger agent workflows
+- Requires `devices.enabled: true` in config
+
+Configuration:
+```json
+"devices": {
+  "enabled": true,
+  "monitor_usb": true
+}
+```
+
+### 6. REST API Server
+
+HTTP endpoints for external integrations:
+
+<AccordionGroup>
+  <Accordion title="POST /chat">
+    Send messages to the agent
+    
+    **Request:**
+    ```json
+    {
+      "message": "Hello, agent!",
+      "session": "api:user123"  // optional
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "response": "Hello! How can I help you?",
+      "session": "api:user123"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="GET /health">
+    Health check endpoint
+    
+    **Response:**
+    ```json
+    {
+      "status": "healthy",
+      "tools": 12,
+      "skills": 4
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="GET /ready">
+    Readiness check for orchestrators
+    
+    **Response:**
+    ```json
+    {
+      "ready": true
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### 7. Voice Transcription (Optional)
+
+Groq-powered voice message transcription:
+- Automatically enabled if `providers.groq.api_key` is set
+- Attaches to Telegram, Discord, and Slack channels
+- Converts voice messages to text for agent processing
+
+## Configuration
+
+Gateway behavior is controlled by `~/.weaver/config.json`:
+
+```json
+{
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN"
+    },
+    "discord": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN"
+    },
+    "slack": {
+      "enabled": false
+    }
+  },
+  "providers": {
+    "groq": {
+      "api_key": "gsk_..."  // Optional, for voice transcription
+    }
+  }
+}
+```
+
+## Shutdown Sequence
+
+Graceful shutdown with Ctrl+C:
+
+```bash
+^C
+Shutting down...
+✓ Gateway stopped
+```
+
+Shutdown order:
+1. Stop accepting new requests
+2. Cancel agent context
+3. Stop health server
+4. Stop device service
+5. Stop heartbeat service
+6. Stop cron service
+7. Stop agent loop
+8. Stop all channels
+
+## Debug Mode
+
+Enable detailed logging:
+
+```bash
+weaver gateway --debug
+```
+
+Debug output includes:
+- Tool registration details
+- Skill loading process
+- Channel connection attempts
+- Message routing
+- API request/response logs
+
+## Examples
+
+<CodeGroup>
+```bash Basic startup
+$ weaver gateway
+
+📦 Agent Status:
+  • Tools: 12 loaded
+  • Skills: 4/6 available
+✓ Gateway started on 0.0.0.0:8080
+Press Ctrl+C to stop
+✓ Cron service started
+✓ Heartbeat service started
+✓ Gateway REST API available at http://0.0.0.0:8080/chat
+✓ Health endpoints available at http://0.0.0.0:8080/health and /ready
+```
+
+```bash With debug
+$ weaver gateway --debug
+
+🔍 Debug mode enabled
+[DEBUG] Loading config from ~/.weaver/config.json
+[DEBUG] Creating provider: openrouter
+[DEBUG] Initializing agent loop...
+[DEBUG] Registering tools: bash, file_write, ...
+[DEBUG] Loading skills: 6 total, 4 available
+
+📦 Agent Status:
+  • Tools: 12 loaded
+  • Skills: 4/6 available
+...
+```
+
+```bash No channels
+$ weaver gateway
+
+📦 Agent Status:
+  • Tools: 12 loaded
+  • Skills: 4/6 available
+⚠ Warning: No channels enabled
+✓ Gateway started on 0.0.0.0:8080
+...
+```
+</CodeGroup>
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Clean shutdown via Ctrl+C |
+| 1 | Config loading failed |
+| 1 | Provider creation failed |
+| 1 | Channel startup failed |
+
+## Error Handling
+
+### Port Already in Use
+
+```bash
+Error starting channels: listen tcp 0.0.0.0:8080: bind: address already in use
+```
+Change port in config or stop the conflicting service.
+
+### Channel Configuration Error
+
+```bash
+Error starting channels: telegram: invalid token
+```
+Verify channel tokens in `~/.weaver/config.json`.
+
+### Cron Service Error
+
+```bash
+Error starting cron service: failed to load jobs
+```
+Check `workspace/cron/jobs.json` for syntax errors.
+
+## Performance
+
+- **Startup time:** ~2-4 seconds
+- **Memory usage:** ~100-200 MB (varies with channels)
+- **Response time:** &lt;1s for most operations
+
+## Production Deployment
+
+<Steps>
+  <Step title="Run as systemd service">
+    Create `/etc/systemd/system/weaver.service`:
+    ```ini
+    [Unit]
+    Description=Weaver Gateway
+    After=network.target
+    
+    [Service]
+    Type=simple
+    User=weaver
+    ExecStart=/usr/local/bin/weaver gateway
+    Restart=on-failure
+    
+    [Install]
+    WantedBy=multi-user.target
+    ```
+  </Step>
+  
+  <Step title="Enable and start">
+    ```bash
+    sudo systemctl enable weaver
+    sudo systemctl start weaver
+    ```
+  </Step>
+  
+  <Step title="Check logs">
+    ```bash
+    journalctl -u weaver -f
+    ```
+  </Step>
+</Steps>
+
+## Related Commands
+
+- [`weaver agent`](/api/cli/agent) - Direct CLI interaction (no gateway)
+- [`weaver cron`](/api/cli/cron) - Manage scheduled jobs
+- [`weaver status`](/api/cli/overview#status) - Check configuration

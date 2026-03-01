@@ -1,0 +1,94 @@
+---
+title: CLI Overview
+description: Complete command-line interface reference for Weaver
+---
+
+Weaver provides a powerful CLI for managing your AI agent orchestration service. All commands follow the pattern `weaver <command> [options]`.
+
+## Quick Start
+
+```bash
+# Initialize Weaver
+weaver onboard
+
+# Chat with agent
+weaver agent -m "Hello!"
+
+# Start gateway server
+weaver gateway
+
+# Check status
+weaver status
+```
+
+## Available Commands
+
+<CardGroup cols={2}>
+  <Card title="onboard" icon="rocket" href="/api/cli/onboard">
+    Initialize configuration and workspace
+  </Card>
+  <Card title="agent" icon="brain" href="/api/cli/agent">
+    Interact with the AI agent directly
+  </Card>
+  <Card title="gateway" icon="server" href="/api/cli/gateway">
+    Start the gateway server with channels
+  </Card>
+  <Card title="auth" icon="key" href="/api/cli/auth">
+    Manage OAuth and token authentication
+  </Card>
+  <Card title="cron" icon="clock" href="/api/cli/cron">
+    Manage scheduled tasks
+  </Card>
+  <Card title="skills" icon="puzzle-piece" href="/api/cli/skills">
+    Install and manage agent skills
+  </Card>
+  <Card title="migrate" icon="arrow-right" href="/api/cli/migrate">
+    Migrate from OpenClaw to Weaver
+  </Card>
+  <Card title="status" icon="circle-check">
+    Show system status and configuration
+  </Card>
+</CardGroup>
+
+## Global Flags
+
+<ParamField path="--help" type="flag">
+  Display help information for any command
+</ParamField>
+
+<ParamField path="--version" type="flag">
+  Show version, build time, and Go version
+  
+  **Aliases:** `-v`, `version`
+</ParamField>
+
+## Exit Codes
+
+| Code | Description |
+|------|-------------|
+| 0 | Success |
+| 1 | General error (config, network, validation) |
+
+## Terminal Output Format
+
+Weaver uses the 🕸️ emoji as its logo prefix for all output:
+
+```bash
+$ weaver agent -m "Hello!"
+🕸️ Hello! How can I assist you today?
+```
+
+## Configuration Path
+
+Weaver stores configuration at `~/.weaver/config.json` by default.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Initial Setup" icon="play" href="/api/cli/onboard">
+    Get started with `weaver onboard`
+  </Card>
+  <Card title="Agent Usage" icon="terminal" href="/api/cli/agent">
+    Learn interactive and message modes
+  </Card>
+</CardGroup>

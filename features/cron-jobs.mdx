@@ -1,0 +1,517 @@
+---
+title: Cron Jobs
+description: Schedule tasks, reminders, and automated workflows with Weaver's cron service.
+---
+
+Weaver's cron service enables scheduling of recurring tasks, one-time reminders, and automated command execution. It provides a robust scheduling engine with multiple schedule types and persistent storage.
+
+## Overview
+
+The cron service supports:
+- **One-time tasks** (reminders)
+- **Recurring intervals** (every N seconds)
+- **Cron expressions** (traditional cron syntax)
+- **Shell command execution**
+- **Agent message processing**
+- **Multi-channel delivery**
+
+## Schedule Types
+
+### One-Time (at)
+
+Execute once at a specific time:
+
+```go
+atMS := time.Now().UnixMilli() + (10 * 60 * 1000) // 10 minutes from now
+schedule := cron.CronSchedule{
+    Kind: "at",
+    AtMS: &atMS,
+}
+```
+
+**Behavior:**
+- Executes once at specified timestamp
+- Automatically disabled after execution
+- Deleted if `DeleteAfterRun: true`
+
+### Recurring Interval (every)
+
+Repeat at fixed intervals:
+
+```go
+everyMS := int64(3600 * 1000) // Every hour
+schedule := cron.CronSchedule{
+    Kind: "every",
+    EveryMS: &everyMS,
+}
+```
+
+**Behavior:**
+- Repeats at fixed interval
+- Next run computed after each execution
+- Continues until disabled
+
+### Cron Expression (cron)
+
+Use traditional cron syntax:
+
+```go
+schedule := cron.CronSchedule{
+    Kind: "cron",
+    Expr: "0 9 * * *", // Daily at 9:00 AM
+}
+```
+
+**Syntax:**
+```
+┌─────── minute (0-59)
+│ ┌───── hour (0-23)
+│ │ ┌─── day of month (1-31)
+│ │ │ ┌─ month (1-12)
+│ │ │ │ ┌ day of week (0-6, 0=Sunday)
+│ │ │ │ │
+* * * * *
+```
+
+**Examples:**
+- `0 9 * * *` - Daily at 9:00 AM
+- `*/15 * * * *` - Every 15 minutes
+- `0 0 * * 0` - Weekly on Sunday at midnight
+- `0 0 1 * *` - Monthly on the 1st at midnight
+
+## Job Structure
+
+### CronJob
+
+```go
+type CronJob struct {
+    ID             string       // Unique identifier
+    Name           string       // Display name
+    Enabled        bool         // Job active status
+    Schedule       CronSchedule // When to run
+    Payload        CronPayload  // What to execute
+    State          CronJobState // Runtime state
+    CreatedAtMS    int64        // Creation timestamp
+    UpdatedAtMS    int64        // Last update timestamp
+    DeleteAfterRun bool         // Auto-delete after execution
+}
+```
+
+### CronPayload
+
+```go
+type CronPayload struct {
+    Kind    string  // "agent_turn"
+    Message string  // Message content
+    Command string  // Shell command (optional)
+    Deliver bool    // Direct delivery vs agent processing
+    Channel string  // Target channel
+    To      string  // Target user/chat ID
+}
+```
+
+### CronJobState
+
+```go
+type CronJobState struct {
+    NextRunAtMS *int64  // Next scheduled execution
+    LastRunAtMS *int64  // Last execution time
+    LastStatus  string  // "ok" or "error"
+    LastError   string  // Error message if failed
+}
+```
+
+## Using the Cron Service
+
+### Creating the Service
+
+```go
+import "github.com/operatoronline/weaver/pkg/cron"
+
+storePath := "/workspace/.weaver/cron.json"
+handler := func(job *cron.CronJob) (string, error) {
+    // Execute job
+    return "ok", nil
+}
+
+service := cron.NewCronService(storePath, handler)
+err := service.Start()
+```
+
+### Adding Jobs
+
+**One-time Reminder:**
+```go
+atMS := time.Now().UnixMilli() + (600 * 1000) // 10 minutes
+schedule := cron.CronSchedule{
+    Kind: "at",
+    AtMS: &atMS,
+}
+
+job, err := service.AddJob(
+    "Check email",           // name
+    schedule,                // schedule
+    "Time to check email!", // message
+    true,                   // deliver directly
+    "telegram",             // channel
+    "123456",               // chat ID
+)
+```
+
+**Recurring Task:**
+```go
+everyMS := int64(7200 * 1000) // Every 2 hours
+schedule := cron.CronSchedule{
+    Kind: "every",
+    EveryMS: &everyMS,
+}
+
+job, err := service.AddJob(
+    "Status check",
+    schedule,
+    "Run system health check",
+    false, // Process through agent
+    "slack",
+    "#alerts",
+)
+```
+
+**Cron Expression:**
+```go
+schedule := cron.CronSchedule{
+    Kind: "cron",
+    Expr: "0 9 * * 1-5", // Weekdays at 9 AM
+}
+
+job, err := service.AddJob(
+    "Daily standup",
+    schedule,
+    "Time for daily standup meeting",
+    true,
+    "discord",
+    "team-channel",
+)
+```
+
+### Managing Jobs
+
+**List Jobs:**
+```go
+// List enabled jobs only
+jobs := service.ListJobs(false)
+
+// List all jobs (including disabled)
+allJobs := service.ListJobs(true)
+```
+
+**Enable/Disable Job:**
+```go
+job := service.EnableJob("job-id", false) // Disable
+job = service.EnableJob("job-id", true)   // Enable
+```
+
+**Remove Job:**
+```go
+removed := service.RemoveJob("job-id")
+if removed {
+    fmt.Println("Job deleted")
+}
+```
+
+**Update Job:**
+```go
+job.Payload.Message = "Updated message"
+err := service.UpdateJob(job)
+```
+
+### Service Control
+
+**Start:**
+```go
+err := service.Start()
+// Loads jobs from storage and starts scheduler
+```
+
+**Stop:**
+```go
+service.Stop()
+// Gracefully stops the scheduler
+```
+
+**Status:**
+```go
+status := service.Status()
+fmt.Printf("Enabled: %v\n", status["enabled"])
+fmt.Printf("Job count: %v\n", status["jobs"])
+fmt.Printf("Next wake: %v\n", status["nextWakeAtMS"])
+```
+
+## Using the Cron Tool
+
+Agents can manage cron jobs through the `cron` tool:
+
+### Add Reminder
+
+```json
+{
+  "tool": "cron",
+  "args": {
+    "action": "add",
+    "message": "Call dentist",
+    "at_seconds": 3600,
+    "deliver": true
+  }
+}
+```
+
+### Schedule Recurring Task
+
+```json
+{
+  "tool": "cron",
+  "args": {
+    "action": "add",
+    "message": "Backup database",
+    "cron_expr": "0 2 * * *",
+    "deliver": false
+  }
+}
+```
+
+### Execute Shell Command
+
+```json
+{
+  "tool": "cron",
+  "args": {
+    "action": "add",
+    "message": "Disk space check",
+    "command": "df -h",
+    "every_seconds": 3600
+  }
+}
+```
+
+### List Jobs
+
+```json
+{
+  "tool": "cron",
+  "args": {
+    "action": "list"
+  }
+}
+```
+
+### Remove Job
+
+```json
+{
+  "tool": "cron",
+  "args": {
+    "action": "remove",
+    "job_id": "abc123def456"
+  }
+}
+```
+
+## Execution Modes
+
+### Direct Delivery (deliver: true)
+
+Message is sent directly to the channel without agent processing:
+
+```go
+job.Payload.Deliver = true
+```
+
+**Use Cases:**
+- Simple reminders
+- Notifications
+- Alerts
+
+**Behavior:**
+- Message sent via message bus
+- No LLM processing
+- Fast execution
+
+### Agent Processing (deliver: false)
+
+Message is processed by the agent, which can use tools:
+
+```go
+job.Payload.Deliver = false
+```
+
+**Use Cases:**
+- Complex tasks requiring tools
+- Dynamic responses
+- Multi-step workflows
+
+**Behavior:**
+- Message sent to agent loop
+- Agent can call tools
+- Response generated by LLM
+
+### Command Execution
+
+Direct shell command execution:
+
+```go
+job.Payload.Command = "git pull && npm test"
+```
+
+**Use Cases:**
+- System maintenance
+- Automated builds
+- Monitoring scripts
+
+**Behavior:**
+- Command executed via exec tool
+- Output sent to channel
+- Errors reported
+
+## Storage
+
+Jobs are persisted to JSON:
+
+```json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "a1b2c3d4",
+      "name": "Daily reminder",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * *"
+      },
+      "payload": {
+        "kind": "agent_turn",
+        "message": "Check calendar",
+        "deliver": true,
+        "channel": "telegram",
+        "to": "123456"
+      },
+      "state": {
+        "nextRunAtMs": 1234567890000,
+        "lastRunAtMs": 1234567800000,
+        "lastStatus": "ok"
+      },
+      "createdAtMs": 1234567000000,
+      "updatedAtMs": 1234567800000,
+      "deleteAfterRun": false
+    }
+  ]
+}
+```
+
+**Location:** `<workspace>/.weaver/cron.json`
+
+**Auto-save:** Jobs are saved after every modification.
+
+## Scheduler Implementation
+
+### Tick Loop
+
+The scheduler runs a 1-second tick loop:
+
+```go
+ticker := time.NewTicker(1 * time.Second)
+for {
+    select {
+    case <-ticker.C:
+        checkJobs() // Check for due jobs
+    case <-stopChan:
+        return
+    }
+}
+```
+
+### Execution Flow
+
+1. Check all enabled jobs
+2. Find jobs where `NextRunAtMS <= now`
+3. Reset `NextRunAtMS` to prevent duplicate execution
+4. Execute jobs outside lock (parallel)
+5. Update job state after completion
+6. Compute next run time
+7. Save state to disk
+
+### Next Run Computation
+
+**At (one-time):**
+- If `AtMS > now`: return `AtMS`
+- If `AtMS <= now`: return `nil` (disable job)
+
+**Every (interval):**
+- `NextRunAtMS = now + EveryMS`
+
+**Cron (expression):**
+- Parse expression with `gronx`
+- Compute next occurrence after current time
+- Return timestamp
+
+## Error Handling
+
+Errors during job execution are logged but don't stop the scheduler:
+
+```go
+if err != nil {
+    job.State.LastStatus = "error"
+    job.State.LastError = err.Error()
+} else {
+    job.State.LastStatus = "ok"
+    job.State.LastError = ""
+}
+```
+
+**Retry:** Jobs are retried on next scheduled run.
+
+**Monitoring:** Check `job.State.LastStatus` and `LastError`.
+
+## Best Practices
+
+1. **Use appropriate schedule type:**
+   - `at` for one-time reminders
+   - `every` for simple recurring tasks
+   - `cron` for complex schedules
+
+2. **Set meaningful names:**
+   - Helps identify jobs in listings
+   - Truncated to 30 chars for display
+
+3. **Choose delivery mode wisely:**
+   - `deliver: true` for simple notifications
+   - `deliver: false` for tasks requiring agent intelligence
+
+4. **Handle errors gracefully:**
+   - Check `LastStatus` and `LastError`
+   - Implement retry logic if needed
+
+5. **Clean up completed jobs:**
+   - Use `DeleteAfterRun` for one-time tasks
+   - Manually remove old jobs
+
+6. **Validate cron expressions:**
+   - Test expressions before deployment
+   - Use online validators
+
+7. **Consider timezone:**
+   - All timestamps are Unix milliseconds (UTC)
+   - Convert to local time for display
+
+## Performance
+
+- **1-second precision:** Jobs execute within 1 second of scheduled time
+- **Parallel execution:** Multiple due jobs run concurrently
+- **Lock-free reads:** Listing jobs doesn't block execution
+- **Efficient storage:** JSON files are compact and fast
+
+## Security
+
+- **Command execution:** Uses exec tool with safety guards
+- **File permissions:** Storage file is 0600 (user-only)
+- **Channel validation:** Jobs can only target configured channels
+- **No code injection:** Job payloads are data, not code

@@ -1,0 +1,355 @@
+---
+title: Configuration
+description: Learn how to configure Weaver for AI agent orchestration with providers, tools, and channels
+---
+
+Weaver uses a flexible configuration system that combines JSON config files with environment variables. This guide covers all configuration options for agent defaults, LLM providers, chat channels, and tools.
+
+## Configuration Files
+
+Weaver stores configuration in `~/.weaver/config.json`. You can also use environment variables to override any JSON setting.
+
+### Default Configuration
+
+When you run `weaver onboard`, a default configuration is created:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/root/.weaver/workspace",
+      "restrict_to_workspace": true,
+      "model": "gemini-3-flash-preview",
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  },
+  "providers": {
+    "gemini": {
+      "api_key": "YOUR_GEMINI_API_KEY"
+    }
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "api_key": "",
+        "max_results": 5
+      }
+    }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+```
+
+## Agent Configuration
+
+Configure default settings for all spawned agents:
+
+<Steps>
+  <Step title="Set Workspace Directory">
+    Define where agents can read and write files:
+
+    ```json
+    {
+      "agents": {
+        "defaults": {
+          "workspace": "~/.weaver/workspace",
+          "restrict_to_workspace": true
+        }
+      }
+    }
+    ```
+
+    Set `restrict_to_workspace` to `false` if you want agents to access files outside the workspace (use with caution).
+  </Step>
+
+  <Step title="Configure Model Settings">
+    Set the default LLM model and parameters:
+
+    ```json
+    {
+      "agents": {
+        "defaults": {
+          "provider": "gemini",
+          "model": "gemini-3-flash-preview",
+          "max_tokens": 8192,
+          "temperature": 0.7,
+          "max_tool_iterations": 20
+        }
+      }
+    }
+    ```
+
+    **Parameters:**
+    - `provider`: The LLM provider to use (gemini, openai, anthropic, etc.)
+    - `model`: Model identifier for the provider
+    - `max_tokens`: Maximum tokens in the response
+    - `temperature`: Randomness in responses (0.0-1.0)
+    - `max_tool_iterations`: Maximum tool execution loops before stopping
+  </Step>
+
+  <Step title="Override with Environment Variables">
+    You can override any agent default with environment variables:
+
+    ```bash
+    export WEAVER_AGENTS_DEFAULTS_MODEL="claude-3-5-sonnet-20241022"
+    export WEAVER_AGENTS_DEFAULTS_TEMPERATURE="0.5"
+    export WEAVER_AGENTS_DEFAULTS_MAX_TOKENS="16384"
+    ```
+  </Step>
+</Steps>
+
+## LLM Providers
+
+Weaver supports multiple LLM providers. Configure the ones you need:
+
+### Supported Providers
+
+<CodeGroup>
+```json Anthropic
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "sk-ant-xxx",
+      "api_base": "",
+      "proxy": ""
+    }
+  }
+}
+```
+
+```json OpenAI
+{
+  "providers": {
+    "openai": {
+      "api_key": "sk-xxx",
+      "api_base": "",
+      "proxy": ""
+    }
+  }
+}
+```
+
+```json Gemini
+{
+  "providers": {
+    "gemini": {
+      "api_key": "xxx"
+    }
+  }
+}
+```
+
+```json OpenRouter
+{
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-xxx",
+      "api_base": "https://openrouter.ai/api/v1"
+    }
+  }
+}
+```
+
+```json Ollama (Local)
+{
+  "providers": {
+    "ollama": {
+      "api_base": "http://localhost:11434"
+    }
+  }
+}
+```
+
+```json GitHub Copilot
+{
+  "providers": {
+    "github_copilot": {
+      "auth_method": "oauth",
+      "connect_mode": "grpc"
+    }
+  }
+}
+```
+</CodeGroup>
+
+### Using Environment Variables
+
+For security, use environment variables for API keys:
+
+```bash .env
+# LLM Provider
+OPENROUTER_API_KEY=sk-or-v1-xxx
+ZHIPU_API_KEY=xxx
+ANTHROPIC_API_KEY=sk-ant-xxx
+OPENAI_API_KEY=sk-xxx
+GEMINI_API_KEY=xxx
+```
+
+Weaver automatically reads from `.env` files or system environment variables.
+
+## Tools Configuration
+
+Configure tools that agents can use:
+
+### Web Search Tools
+
+<CodeGroup>
+```json Brave Search
+{
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": true,
+        "api_key": "BSA...",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+```json DuckDuckGo
+{
+  "tools": {
+    "web": {
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+Environment variable:
+```bash
+export BRAVE_SEARCH_API_KEY=BSA...
+```
+
+## Gateway Configuration
+
+Configure the Weaver gateway server for chat channels:
+
+```json
+{
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+```
+
+The gateway provides:
+- HTTP health check endpoint at `/health`
+- Chat channel webhooks
+- Agent communication bus
+
+## Heartbeat Service
+
+Keep long-running sessions alive:
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+- `enabled`: Enable/disable heartbeat
+- `interval`: Minutes between heartbeat checks (minimum 5)
+
+## Device Monitoring
+
+Monitor USB and hardware devices (Linux only):
+
+```json
+{
+  "devices": {
+    "enabled": false,
+    "monitor_usb": true
+  }
+}
+```
+
+## Complete Example
+
+Here's a production-ready configuration:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.weaver/workspace",
+      "restrict_to_workspace": true,
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-20241022",
+      "max_tokens": 16384,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "api_key": "${ANTHROPIC_API_KEY}"
+    },
+    "openai": {
+      "api_key": "${OPENAI_API_KEY}"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "${TELEGRAM_BOT_TOKEN}",
+      "allow_from": ["123456789"]
+    },
+    "discord": {
+      "enabled": true,
+      "token": "${DISCORD_BOT_TOKEN}",
+      "allow_from": ["987654321"]
+    }
+  },
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": true,
+        "api_key": "${BRAVE_SEARCH_API_KEY}",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      }
+    }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+```
+
+## Configuration Priority
+
+Weaver loads configuration in this order (later sources override earlier ones):
+
+1. Default configuration (pkg/config/config.go:218)
+2. `~/.weaver/config.json`
+3. Environment variables
+
+This allows you to commit `config.json` to version control while keeping secrets in environment variables.

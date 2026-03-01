@@ -1,0 +1,510 @@
+---
+title: Multi-Channel Setup
+description: Connect Weaver to multiple chat platforms including Telegram, Discord, Slack, LINE, and more
+---
+
+Weaver supports simultaneous connections to multiple chat platforms, allowing you to deploy AI agents across your entire communication infrastructure. Each channel can have independent configurations and access controls.
+
+## Supported Channels
+
+Weaver supports the following chat platforms (pkg/config/config.go:71):
+
+- **Telegram** - Popular messaging platform with bot API
+- **Discord** - Gaming and community platform
+- **Slack** - Enterprise team collaboration
+- **WhatsApp** - Via bridge server
+- **LINE** - Popular in Asia-Pacific region
+- **Feishu (Lark)** - Enterprise platform by ByteDance
+- **DingTalk** - Enterprise platform by Alibaba
+- **QQ** - Chinese instant messaging
+- **OneBot** - Universal bot protocol
+- **MaixCam** - IoT device integration
+
+## Channel Configuration Structure
+
+All channels follow a common configuration pattern (pkg/config/config.go:71):
+
+```go
+type ChannelsConfig struct {
+    WhatsApp WhatsAppConfig `json:"whatsapp"`
+    Telegram TelegramConfig `json:"telegram"`
+    Feishu   FeishuConfig   `json:"feishu"`
+    Discord  DiscordConfig  `json:"discord"`
+    MaixCam  MaixCamConfig  `json:"maixcam"`
+    QQ       QQConfig       `json:"qq"`
+    DingTalk DingTalkConfig `json:"dingtalk"`
+    Slack    SlackConfig    `json:"slack"`
+    LINE     LINEConfig     `json:"line"`
+    OneBot   OneBotConfig   `json:"onebot"`
+}
+```
+
+## Telegram Setup
+
+<Steps>
+  <Step title="Create a Telegram Bot">
+    1. Open Telegram and search for `@BotFather`
+    2. Send `/newbot` command
+    3. Follow prompts to set bot name and username
+    4. Copy the API token (format: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
+  </Step>
+
+  <Step title="Configure Weaver">
+    Add Telegram configuration to `~/.weaver/config.json`:
+
+    ```json
+    {
+      "channels": {
+        "telegram": {
+          "enabled": true,
+          "token": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+          "allow_from": ["123456789"],
+          "proxy": ""
+        }
+      }
+    }
+    ```
+
+    Or use environment variables:
+
+    ```bash
+    export TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+    export WEAVER_CHANNELS_TELEGRAM_ENABLED=true
+    export WEAVER_CHANNELS_TELEGRAM_ALLOW_FROM=123456789,987654321
+    ```
+  </Step>
+
+  <Step title="Get Your User ID">
+    To find your Telegram user ID:
+    1. Start a chat with your bot
+    2. Send any message
+    3. Check Weaver logs for the user ID
+    4. Add it to `allow_from` array
+  </Step>
+
+  <Step title="Start the Gateway">
+    ```bash
+    weaver gateway
+    ```
+
+    Your bot is now online and will respond to messages from allowed users.
+  </Step>
+</Steps>
+
+### Telegram Configuration Reference
+
+From pkg/config/config.go:90:
+
+```go
+type TelegramConfig struct {
+    Enabled   bool                `json:"enabled" env:"WEAVER_CHANNELS_TELEGRAM_ENABLED"`
+    Token     string              `json:"token" env:"WEAVER_CHANNELS_TELEGRAM_TOKEN"`
+    Proxy     string              `json:"proxy" env:"WEAVER_CHANNELS_TELEGRAM_PROXY"`
+    AllowFrom FlexibleStringSlice `json:"allow_from" env:"WEAVER_CHANNELS_TELEGRAM_ALLOW_FROM"`
+}
+```
+
+## Discord Setup
+
+<Steps>
+  <Step title="Create Discord Application">
+    1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+    2. Click "New Application"
+    3. Give your application a name
+    4. Navigate to "Bot" section
+    5. Click "Add Bot"
+    6. Copy the bot token
+  </Step>
+
+  <Step title="Enable Required Intents">
+    In the Bot settings, enable:
+    - Server Members Intent
+    - Message Content Intent
+  </Step>
+
+  <Step title="Configure Weaver">
+    ```json
+    {
+      "channels": {
+        "discord": {
+          "enabled": true,
+          "token": "YOUR_DISCORD_BOT_TOKEN",
+          "allow_from": ["USER_ID_1", "USER_ID_2"]
+        }
+      }
+    }
+    ```
+
+    Or via environment:
+
+    ```bash
+    export DISCORD_BOT_TOKEN=YOUR_DISCORD_BOT_TOKEN
+    export WEAVER_CHANNELS_DISCORD_ENABLED=true
+    ```
+  </Step>
+
+  <Step title="Invite Bot to Server">
+    1. Go to OAuth2 → URL Generator in Discord Developer Portal
+    2. Select scopes: `bot`
+    3. Select permissions: `Send Messages`, `Read Message History`
+    4. Copy generated URL and open in browser
+    5. Select server and authorize
+  </Step>
+</Steps>
+
+### Discord Configuration Reference
+
+From pkg/config/config.go:106:
+
+```go
+type DiscordConfig struct {
+    Enabled   bool                `json:"enabled" env:"WEAVER_CHANNELS_DISCORD_ENABLED"`
+    Token     string              `json:"token" env:"WEAVER_CHANNELS_DISCORD_TOKEN"`
+    AllowFrom FlexibleStringSlice `json:"allow_from" env:"WEAVER_CHANNELS_DISCORD_ALLOW_FROM"`
+}
+```
+
+## Slack Setup
+
+<Steps>
+  <Step title="Create Slack App">
+    1. Go to [Slack API](https://api.slack.com/apps)
+    2. Click "Create New App" → "From scratch"
+    3. Name your app and select workspace
+  </Step>
+
+  <Step title="Configure Bot Permissions">
+    Under "OAuth & Permissions", add scopes:
+    - `app_mentions:read`
+    - `chat:write`
+    - `channels:history`
+    - `groups:history`
+    - `im:history`
+    - `mpim:history`
+  </Step>
+
+  <Step title="Enable Socket Mode">
+    1. Go to "Socket Mode" in sidebar
+    2. Enable Socket Mode
+    3. Create an app-level token with `connections:write` scope
+    4. Copy the token (starts with `xapp-`)
+  </Step>
+
+  <Step title="Install App to Workspace">
+    1. Go to "OAuth & Permissions"
+    2. Click "Install to Workspace"
+    3. Copy the Bot User OAuth Token (starts with `xoxb-`)
+  </Step>
+
+  <Step title="Configure Weaver">
+    ```json
+    {
+      "channels": {
+        "slack": {
+          "enabled": true,
+          "bot_token": "xoxb-YOUR-BOT-TOKEN",
+          "app_token": "xapp-YOUR-APP-TOKEN",
+          "allow_from": ["U01234ABCDE"]
+        }
+      }
+    }
+    ```
+
+    Or via environment:
+
+    ```bash
+    export WEAVER_CHANNELS_SLACK_BOT_TOKEN=xoxb-YOUR-BOT-TOKEN
+    export WEAVER_CHANNELS_SLACK_APP_TOKEN=xapp-YOUR-APP-TOKEN
+    export WEAVER_CHANNELS_SLACK_ENABLED=true
+    ```
+  </Step>
+</Steps>
+
+### Slack Configuration Reference
+
+From pkg/config/config.go:133:
+
+```go
+type SlackConfig struct {
+    Enabled   bool                `json:"enabled" env:"WEAVER_CHANNELS_SLACK_ENABLED"`
+    BotToken  string              `json:"bot_token" env:"WEAVER_CHANNELS_SLACK_BOT_TOKEN"`
+    AppToken  string              `json:"app_token" env:"WEAVER_CHANNELS_SLACK_APP_TOKEN"`
+    AllowFrom FlexibleStringSlice `json:"allow_from" env:"WEAVER_CHANNELS_SLACK_ALLOW_FROM"`
+}
+```
+
+## LINE Setup
+
+<Steps>
+  <Step title="Create LINE Channel">
+    1. Go to [LINE Developers Console](https://developers.line.biz/)
+    2. Create a new provider or use existing
+    3. Create a Messaging API channel
+    4. Note your Channel Secret and Channel Access Token
+  </Step>
+
+  <Step title="Configure Webhook">
+    LINE requires a public webhook endpoint:
+
+    ```json
+    {
+      "channels": {
+        "line": {
+          "enabled": true,
+          "channel_secret": "YOUR_CHANNEL_SECRET",
+          "channel_access_token": "YOUR_ACCESS_TOKEN",
+          "webhook_host": "0.0.0.0",
+          "webhook_port": 18791,
+          "webhook_path": "/webhook/line",
+          "allow_from": []
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Set Webhook URL">
+    In LINE Developers Console:
+    1. Go to Messaging API settings
+    2. Set Webhook URL to `https://your-domain.com:18791/webhook/line`
+    3. Enable "Use webhook"
+    4. Disable "Auto-reply messages"
+  </Step>
+
+  <Step title="Use Environment Variables">
+    ```bash
+    export LINE_CHANNEL_SECRET=YOUR_CHANNEL_SECRET
+    export LINE_CHANNEL_ACCESS_TOKEN=YOUR_ACCESS_TOKEN
+    export WEAVER_CHANNELS_LINE_ENABLED=true
+    ```
+  </Step>
+</Steps>
+
+### LINE Configuration Reference
+
+From pkg/config/config.go:140:
+
+```go
+type LINEConfig struct {
+    Enabled            bool                `json:"enabled" env:"WEAVER_CHANNELS_LINE_ENABLED"`
+    ChannelSecret      string              `json:"channel_secret" env:"WEAVER_CHANNELS_LINE_CHANNEL_SECRET"`
+    ChannelAccessToken string              `json:"channel_access_token" env:"WEAVER_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+    WebhookHost        string              `json:"webhook_host" env:"WEAVER_CHANNELS_LINE_WEBHOOK_HOST"`
+    WebhookPort        int                 `json:"webhook_port" env:"WEAVER_CHANNELS_LINE_WEBHOOK_PORT"`
+    WebhookPath        string              `json:"webhook_path" env:"WEAVER_CHANNELS_LINE_WEBHOOK_PATH"`
+    AllowFrom          FlexibleStringSlice `json:"allow_from" env:"WEAVER_CHANNELS_LINE_ALLOW_FROM"`
+}
+```
+
+## Access Control
+
+All channels support the `allow_from` field to restrict access to specific users:
+
+### Flexible String Format
+
+From pkg/config/config.go:13, `allow_from` accepts both strings and numbers:
+
+```json
+{
+  "allow_from": [
+    "123456789",
+    987654321,
+    "user-id-string"
+  ]
+}
+```
+
+### Unrestricted Access
+
+To allow all users (not recommended for production):
+
+```json
+{
+  "allow_from": []
+}
+```
+
+## Multi-Channel Configuration Example
+
+Run agents on multiple platforms simultaneously:
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "${TELEGRAM_BOT_TOKEN}",
+      "allow_from": ["123456789", "987654321"]
+    },
+    "discord": {
+      "enabled": true,
+      "token": "${DISCORD_BOT_TOKEN}",
+      "allow_from": ["USER_ID_1"]
+    },
+    "slack": {
+      "enabled": true,
+      "bot_token": "${SLACK_BOT_TOKEN}",
+      "app_token": "${SLACK_APP_TOKEN}",
+      "allow_from": ["U01234ABCDE"]
+    },
+    "line": {
+      "enabled": true,
+      "channel_secret": "${LINE_CHANNEL_SECRET}",
+      "channel_access_token": "${LINE_CHANNEL_ACCESS_TOKEN}",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line"
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+```
+
+## Advanced Channel Configuration
+
+### WhatsApp (via Bridge)
+
+From pkg/config/config.go:84:
+
+```json
+{
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "bridge_url": "ws://localhost:3001",
+      "allow_from": ["1234567890"]
+    }
+  }
+}
+```
+
+Requires a WhatsApp bridge server (e.g., whatsapp-web.js).
+
+### Feishu (Lark)
+
+From pkg/config/config.go:97:
+
+```json
+{
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "app_id": "YOUR_APP_ID",
+      "app_secret": "YOUR_APP_SECRET",
+      "encrypt_key": "YOUR_ENCRYPT_KEY",
+      "verification_token": "YOUR_VERIFICATION_TOKEN",
+      "allow_from": []
+    }
+  }
+}
+```
+
+### DingTalk
+
+From pkg/config/config.go:126:
+
+```json
+{
+  "channels": {
+    "dingtalk": {
+      "enabled": true,
+      "client_id": "YOUR_CLIENT_ID",
+      "client_secret": "YOUR_CLIENT_SECRET",
+      "allow_from": []
+    }
+  }
+}
+```
+
+### OneBot Protocol
+
+From pkg/config/config.go:150:
+
+```json
+{
+  "channels": {
+    "onebot": {
+      "enabled": true,
+      "ws_url": "ws://127.0.0.1:3001",
+      "access_token": "YOUR_TOKEN",
+      "reconnect_interval": 5,
+      "group_trigger_prefix": ["@bot", "!"],
+      "allow_from": []
+    }
+  }
+}
+```
+
+Supports QQ, Kaiheila, and other platforms via OneBot v11/v12 protocol.
+
+## Running the Gateway
+
+<Steps>
+  <Step title="Start with All Configured Channels">
+    ```bash
+    weaver gateway
+    ```
+
+    Weaver will:
+    1. Load configuration from `~/.weaver/config.json`
+    2. Connect to all enabled channels
+    3. Start listening for messages
+    4. Health check available at `http://localhost:18790/health`
+  </Step>
+
+  <Step title="Verify Connections">
+    Check logs for successful channel connections:
+
+    ```text
+    INFO  Telegram channel connected
+    INFO  Discord channel connected
+    INFO  Slack channel connected
+    INFO  Gateway started on 0.0.0.0:18790
+    ```
+  </Step>
+
+  <Step title="Test Each Channel">
+    Send a test message from each platform to verify agent responses.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Channel Won't Connect">
+    - Verify API tokens are correct
+    - Check `enabled: true` is set
+    - Review Weaver logs for error messages
+    - Ensure network connectivity to platform APIs
+  </Accordion>
+
+  <Accordion title="Bot Doesn't Respond">
+    - Check if your user ID is in `allow_from` list
+    - Verify bot has necessary permissions
+    - For Discord/Slack: Ensure bot is in the channel/server
+    - Check Weaver logs for incoming message events
+  </Accordion>
+
+  <Accordion title="Webhook Errors (LINE, Feishu)">
+    - Ensure webhook port is open and accessible
+    - Use a reverse proxy (nginx) for HTTPS
+    - Verify webhook URL is set correctly in platform console
+    - Check firewall rules
+  </Accordion>
+
+  <Accordion title="Environment Variables Not Loaded">
+    - Use `.env` file in working directory
+    - Export variables before running `weaver gateway`
+    - Check variable names match exact format (case-sensitive)
+    - Restart gateway after changing environment
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Configure [OAuth Authentication](/guides/oauth-authentication) for secure provider access
+- Set up [Docker Deployment](/guides/docker-deployment) for production multi-channel hosting
+- Learn about [Spawning Agents](/guides/spawning-agents) for advanced channel workflows

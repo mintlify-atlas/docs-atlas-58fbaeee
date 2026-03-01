@@ -1,0 +1,342 @@
+---
+title: OpenRouter
+description: Access multiple AI models through OpenRouter's unified API
+---
+
+OpenRouter provides unified access to models from multiple providers including OpenAI, Anthropic, Google, Meta, and more through a single API.
+
+## Why Use OpenRouter?
+
+- **Single API Key**: Access models from multiple providers
+- **Automatic Fallback**: Configure fallback models if primary is unavailable
+- **Model Comparison**: Test different models without multiple integrations
+- **Cost Optimization**: Choose the best model for your budget
+- **No Vendor Lock-in**: Switch between providers seamlessly
+
+## Setup
+
+### 1. Get API Key
+
+1. Visit [OpenRouter](https://openrouter.ai/)
+2. Sign up or log in
+3. Navigate to [API Keys](https://openrouter.ai/keys)
+4. Create a new API key
+5. Copy the key (starts with `sk-or-v1-`)
+
+### 2. Configure Weaver
+
+**Option A: Configuration File**
+
+Add to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-...",
+      "api_base": "https://openrouter.ai/api/v1"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "openrouter",
+      "model": "anthropic/claude-3.5-sonnet"
+    }
+  }
+}
+```
+
+**Option B: Environment Variable**
+
+Add to `.env`:
+
+```bash
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+## Model Selection
+
+OpenRouter uses provider prefixes in model names:
+
+### Popular Models
+
+| Model ID | Provider | Description |
+|----------|----------|-------------|
+| `anthropic/claude-3.5-sonnet` | Anthropic | Latest Claude Sonnet |
+| `openai/gpt-4-turbo` | OpenAI | GPT-4 Turbo |
+| `google/gemini-pro-1.5` | Google | Gemini Pro |
+| `meta-llama/llama-3.1-70b-instruct` | Meta | Llama 3.1 70B |
+| `deepseek/deepseek-chat` | DeepSeek | DeepSeek V3 |
+
+### Model Discovery
+
+Find available models:
+
+```bash
+curl https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY"
+```
+
+Or browse at [OpenRouter Models](https://openrouter.ai/models).
+
+## Configuration Options
+
+<ParamField path="api_key" type="string">
+  OpenRouter API key (required)
+</ParamField>
+
+<ParamField path="api_base" type="string" default="https://openrouter.ai/api/v1">
+  OpenRouter API endpoint
+</ParamField>
+
+<ParamField path="proxy" type="string">
+  HTTP/HTTPS proxy URL for API requests (optional)
+</ParamField>
+
+## Automatic Provider Detection
+
+Weaver automatically uses OpenRouter when model names include:
+
+- `openrouter/` prefix
+- `anthropic/` prefix
+- `openai/` prefix
+- `meta-llama/` prefix
+- `deepseek/` prefix
+- `google/` prefix
+
+Source: `pkg/providers/http_provider.go:372-380`
+
+### Example
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-..."
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-3.5-sonnet"
+    }
+  }
+}
+```
+
+Weaver automatically uses OpenRouter because model starts with `anthropic/`.
+
+## Fallback Behavior
+
+If no specific provider is configured, Weaver falls back to OpenRouter:
+
+```go
+// From http_provider.go:456-468
+default:
+  if cfg.Providers.OpenRouter.APIKey != "" {
+    apiKey = cfg.Providers.OpenRouter.APIKey
+    proxy = cfg.Providers.OpenRouter.Proxy
+    if cfg.Providers.OpenRouter.APIBase != "" {
+      apiBase = cfg.Providers.OpenRouter.APIBase
+    } else {
+      apiBase = "https://openrouter.ai/api/v1"
+    }
+  }
+```
+
+This makes OpenRouter an excellent default provider.
+
+## Model Parameters
+
+Configure model behavior:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-3.5-sonnet",
+      "max_tokens": 8192,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+<ParamField path="max_tokens" type="integer" default="8192">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="temperature" type="float" default="0.7">
+  Controls randomness (0.0 = deterministic, 2.0 = very random)
+</ParamField>
+
+## Usage Examples
+
+### Using Different Providers
+
+```bash
+# Use Claude via OpenRouter
+weaver chat --model anthropic/claude-3.5-sonnet
+
+# Use GPT-4 via OpenRouter
+weaver chat --model openai/gpt-4-turbo
+
+# Use Gemini via OpenRouter
+weaver chat --model google/gemini-pro-1.5
+
+# Use Llama via OpenRouter
+weaver chat --model meta-llama/llama-3.1-70b-instruct
+```
+
+### Cost Optimization
+
+Switch between models based on task complexity:
+
+```bash
+# Use cheaper model for simple tasks
+weaver chat --model anthropic/claude-3-haiku
+
+# Use powerful model for complex tasks
+weaver chat --model anthropic/claude-3-opus
+```
+
+### Model Comparison
+
+Test the same prompt with different models:
+
+```bash
+for model in "openai/gpt-4" "anthropic/claude-3.5-sonnet" "google/gemini-pro"; do
+  echo "Testing $model"
+  weaver chat --model "$model" "Explain quantum computing"
+done
+```
+
+## Implementation Details
+
+Weaver uses the **HTTPProvider** for OpenRouter:
+
+- OpenAI-compatible API format
+- Standard `/chat/completions` endpoint
+- Automatic model namespace handling
+- Tool calling support
+
+Source: `pkg/providers/http_provider.go`
+
+### Tool Calling
+
+OpenRouter supports tool calling for compatible models:
+
+```json
+{
+  "model": "anthropic/claude-3.5-sonnet",
+  "messages": [...],
+  "tools": [...],
+  "tool_choice": "auto"
+}
+```
+
+Source: `pkg/providers/http_provider.go:69-72`
+
+## Pricing
+
+OpenRouter uses per-token pricing that varies by model:
+
+- View pricing at [OpenRouter Pricing](https://openrouter.ai/models)
+- Pricing shown in USD per 1M tokens
+- Some models offer free tiers
+- Billing is usage-based
+
+### Check Costs
+
+```bash
+curl https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  | jq '.data[] | {id: .id, pricing: .pricing}'
+```
+
+## Troubleshooting
+
+### API Key Issues
+
+```bash
+# Verify API key
+echo $OPENROUTER_API_KEY
+
+# Test with curl
+curl https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY"
+```
+
+### Common Errors
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized">
+    - Verify API key is correct and starts with `sk-or-v1-`
+    - Check that the API key hasn't been revoked
+    - Ensure you have credits in your OpenRouter account
+  </Accordion>
+  
+  <Accordion title="404 Model Not Found">
+    - Verify model ID is correct (include provider prefix)
+    - Check [available models](https://openrouter.ai/models)
+    - Some models require allowlist access
+  </Accordion>
+  
+  <Accordion title="429 Rate Limit">
+    - OpenRouter has rate limits per model
+    - Implement exponential backoff
+    - Consider distributing load across multiple models
+  </Accordion>
+  
+  <Accordion title="402 Insufficient Credits">
+    - Add credits to your OpenRouter account
+    - Check your balance at [OpenRouter Dashboard](https://openrouter.ai/)
+    - Some models are free for testing
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Features
+
+### Model Fallback
+
+OpenRouter supports automatic fallback:
+
+```json
+{
+  "model": "anthropic/claude-3.5-sonnet",
+  "route": "fallback",
+  "models": [
+    "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3-haiku",
+    "openai/gpt-4-turbo"
+  ]
+}
+```
+
+### Response Metadata
+
+OpenRouter returns usage metadata:
+
+```json
+{
+  "usage": {
+    "prompt_tokens": 100,
+    "completion_tokens": 50,
+    "total_tokens": 150
+  }
+}
+```
+
+Weaver automatically parses this into `UsageInfo`.
+
+Source: `pkg/providers/http_provider.go:150`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Provider Overview" icon="arrow-left" href="/integrations/providers/overview">
+    Back to all providers
+  </Card>
+  <Card title="Model Comparison" icon="scale-balanced" href="/guides/model-selection">
+    Choose the right model
+  </Card>
+</CardGroup>

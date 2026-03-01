@@ -1,0 +1,285 @@
+---
+title: Discord Channel Integration
+description: Connect Weaver to Discord servers using the Discord Bot API for AI agent communication
+---
+
+The Discord channel enables Weaver to interact in Discord servers and DMs using the official Discord API. It supports text messages, attachments, voice transcription, and typing indicators.
+
+## Prerequisites
+
+- A Discord account
+- Administrator access to a Discord server (for adding the bot)
+
+## Creating a Discord Bot
+
+1. **Go to Discord Developer Portal**
+   - Visit [https://discord.com/developers/applications](https://discord.com/developers/applications)
+   - Click "New Application"
+   - Name your application (e.g., "Weaver Bot")
+
+2. **Create a Bot**
+   - Navigate to the "Bot" section in the left sidebar
+   - Click "Add Bot" and confirm
+   - Click "Reset Token" to generate a bot token
+   - **Save this token securely** - it won't be shown again
+
+3. **Configure Bot Permissions**
+   - Under "Privileged Gateway Intents", enable:
+     - ✅ Message Content Intent (required to read messages)
+   - Under "Bot Permissions", select:
+     - ✅ Send Messages
+     - ✅ Read Messages/View Channels
+     - ✅ Read Message History
+     - ✅ Attach Files
+     - ✅ Add Reactions (optional)
+
+4. **Generate Invite Link**
+   - Go to "OAuth2" → "URL Generator"
+   - Select scopes: `bot`
+   - Select bot permissions (same as above)
+   - Copy the generated URL
+
+5. **Add Bot to Server**
+   - Open the generated URL in your browser
+   - Select your server from the dropdown
+   - Click "Authorize"
+
+## Configuration
+
+Add the Discord channel to your `config.yaml`:
+
+```yaml
+channels:
+  discord:
+    enabled: true
+    token: "YOUR_BOT_TOKEN"
+    allow_from:
+      - "123456789012345678"  # Discord user IDs
+```
+
+### Configuration Options
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Discord channel |
+| `token` | string | Yes | Bot token from Developer Portal |
+| `allow_from` | array | No | Allowed Discord user IDs |
+
+## User ID Format
+
+Discord uses 18-digit numeric IDs to identify users.
+
+**Finding a User ID:**
+1. Enable Developer Mode in Discord:
+   - User Settings → Advanced → Developer Mode (toggle on)
+2. Right-click a user and select "Copy User ID"
+3. Add to `allow_from`: `"123456789012345678"`
+
+**Finding Your Own ID:**
+1. Message the bot in a DM or mention it in a channel
+2. Check Weaver logs:
+   ```
+   Received message sender_id=123456789012345678 username=YourName
+   ```
+
+## Supported Features
+
+### Message Types
+
+- **Text Messages** - Full markdown support
+- **Attachments** - Images, videos, files
+- **Audio Files** - Transcribed if Groq is enabled
+- **Embeds** - Basic support (future enhancement)
+- **Reactions** - Can be added by bot
+
+### Message Handling
+
+- **Typing Indicator** - Shows "Bot is typing..." while processing
+- **Long Messages** - Automatically split into chunks (2000 char limit)
+- **Code Block Preservation** - Smart splitting avoids breaking code blocks
+- **Concurrent Messages** - Supports multiple users simultaneously
+
+### Attachment Processing
+
+1. **Images/Files**: Sent to agent as attachment URLs
+2. **Audio Files**: Downloaded and transcribed (if configured)
+3. **Temporary Files**: Cleaned up after processing
+
+## Message Splitting
+
+Discord limits messages to 2000 characters. Weaver intelligently splits long messages:
+
+- Default split at 1500 characters (500 char safety buffer)
+- Preserves code blocks (extends up to 2000 chars if needed)
+- Splits on natural boundaries (newlines, spaces)
+- Maintains formatting integrity
+
+## Audio Transcription
+
+Enable audio transcription in `config.yaml`:
+
+```yaml
+voice:
+  enabled: true
+  groq_api_key: "your-groq-api-key"
+  model: "whisper-large-v3"
+
+channels:
+  discord:
+    enabled: true
+    token: "your-bot-token"
+```
+
+When enabled, audio attachments are transcribed:
+```
+[audio transcription: This is what was said in the audio file]
+```
+
+If transcription fails:
+```
+[audio: filename.mp3 (transcription failed)]
+```
+
+## Bot Behavior
+
+### Direct Messages (DMs)
+- Bot responds to all messages
+- No mention required
+
+### Guild/Server Messages
+- Bot only responds when mentioned: `@YourBot hello`
+- Or when replying to bot's messages
+- Prevents spam in busy channels
+
+### Ignored Messages
+- Messages from other bots (prevents bot loops)
+- Messages from the bot itself
+- System messages (joins, pins, etc.)
+
+## Connection Details
+
+- **Protocol**: WebSocket Gateway
+- **Mode**: Gateway API v10
+- **Intents**: Guild Messages, Direct Messages, Message Content
+- **Auto-reconnect**: Yes
+
+## Error Handling
+
+### Common Issues
+
+**Invalid Token**
+```
+failed to create discord session: HTTP 401 Unauthorized
+```
+- Verify token in Developer Portal
+- Regenerate token if needed
+
+**Missing Permissions**
+```
+failed to send discord message: Missing Permissions
+```
+- Check bot role in server settings
+- Ensure bot has Send Messages permission
+
+**Message Content Intent Not Enabled**
+```
+Bot receives empty message content
+```
+- Enable "Message Content Intent" in Developer Portal
+- Bot must have this privileged intent enabled
+
+**User Not Allowed**
+```
+Message rejected by allowlist user_id: 123456789012345678
+```
+- Add user ID to `allow_from` list
+- Or remove `allow_from` to allow all users
+
+## Security Considerations
+
+1. **Token Security**: Never commit bot token to version control
+2. **Message Content Intent**: Required but considered privileged - verify bots under 100 servers
+3. **Allowlist**: Use `allow_from` to restrict bot access
+4. **Rate Limits**: Discord enforces API rate limits (handled automatically)
+
+## Metadata Captured
+
+Each Discord message includes:
+
+```yaml
+metadata:
+  message_id: "123456789012345678"
+  user_id: "987654321098765432"
+  username: "alice"
+  display_name: "Alice#1234"
+  guild_id: "111222333444555666"  # Empty for DMs
+  channel_id: "777888999000111222"
+  is_dm: "true"  # or "false"
+```
+
+## Example Configuration
+
+### Public Bot (All Users)
+```yaml
+channels:
+  discord:
+    enabled: true
+    token: "MTIzNDU2Nzg5MDEyMzQ1Njc4.AbCdEf.GhIjKlMnOpQrStUvWxYz"
+```
+
+### Private Bot (Allowlist)
+```yaml
+channels:
+  discord:
+    enabled: true
+    token: "MTIzNDU2Nzg5MDEyMzQ1Njc4.AbCdEf.GhIjKlMnOpQrStUvWxYz"
+    allow_from:
+      - "123456789012345678"  # alice
+      - "234567890123456789"  # bob
+
+voice:
+  enabled: true
+  groq_api_key: "gsk_..."
+```
+
+## Logging
+
+Monitor Discord activity:
+
+```bash
+# View Discord-specific logs
+grep "discord" weaver.log
+
+# Monitor connections
+tail -f weaver.log | grep "discord"
+```
+
+Log examples:
+```
+Starting Discord bot
+Discord bot connected username=WeaverBot user_id=123456789012345678
+Received message sender_name=Alice#1234 sender_id=987654321098765432
+```
+
+## Best Practices
+
+1. **Set Bot Status**: Use Discord Developer Portal to set "About Me" and status
+2. **Create Dedicated Channels**: Create bot-specific channels to organize conversations
+3. **Use Roles**: Assign a bot role with specific permissions
+4. **Monitor Usage**: Watch logs for unusual activity
+5. **Test in Private Server**: Create a test server for development
+
+## Advanced Features
+
+The Discord channel supports:
+
+- **Content Type Detection**: Automatically identifies audio files by MIME type
+- **Graceful Degradation**: Falls back to URL-only if download fails
+- **Concurrent Processing**: Handles multiple users and channels simultaneously
+- **Timeout Control**: 10-second timeout for message sending, 30-second for transcription
+
+## Next Steps
+
+- [Configure Agents](/core/agents) to respond in Discord
+- [Set up Voice Transcription](/features/voice) for audio files
+- [Enable Multimodal](/features/multimodal) for image understanding

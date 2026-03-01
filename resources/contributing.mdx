@@ -1,0 +1,203 @@
+---
+title: Contributing to Weaver
+description: Join the Weaver community and help build the next generation of ultra-efficient AI orchestration
+---
+
+## Welcome Contributors!
+
+Thank you for your interest in contributing to Weaver! We're building an ultra-efficient AI agent orchestration service, and your contributions help make it better for everyone.
+
+## Quick Start
+
+Weaver is built in Go, making it accessible for rapid iteration and high-quality contributions. Here's how to get started:
+
+### Prerequisites
+
+- Go 1.21 or higher
+- Docker for testing containerized agents
+- Git for version control
+
+### Setting Up Your Development Environment
+
+```bash
+# Fork and clone the repository
+git clone https://github.com/operatoronline/weaver.git
+cd weaver
+
+# Install dependencies
+go mod download
+
+# Run tests
+go test ./...
+
+# Format your code
+make fmt
+```
+
+## Pull Request Process
+
+All contributions go through our automated CI/CD pipeline to ensure code quality:
+
+### 1. Format Check
+
+Your code must be properly formatted using `go fmt`:
+
+```bash
+make fmt
+```
+
+The CI will fail if code is not formatted. Run this command and commit any changes before pushing.
+
+### 2. Code Vetting
+
+All code must pass `go vet` analysis:
+
+```bash
+go generate ./...
+go vet ./...
+```
+
+### 3. Tests
+
+All tests must pass:
+
+```bash
+go generate ./...
+go test ./...
+```
+
+### 4. PR Workflow
+
+1. Create a feature branch from `main`
+2. Make your changes following the code standards
+3. Commit with clear, descriptive messages
+4. Push to your fork
+5. Open a Pull Request with a clear description
+
+The automated PR workflow runs:
+- Format checking (`fmt-check`)
+- Static analysis (`vet`)
+- Unit tests (`test`)
+
+All checks must pass before your PR can be merged.
+
+## Reporting Issues
+
+Use our issue templates when reporting bugs or requesting features:
+
+### Bug Reports
+
+Include the following information:
+
+- **Weaver Version**: (e.g., v0.1.2 or commit hash)
+- **Go Version**: (e.g., go 1.22)
+- **AI Model & Provider**: (e.g., gemini-3-flash via Gemini)
+- **Operating System**: (e.g., Ubuntu 22.04, macOS, Android Termux)
+- **Channels**: (e.g., Discord, Telegram, Feishu)
+- **Steps to Reproduce**: Clear, numbered steps
+- **Actual vs Expected Behavior**: What happened vs what should happen
+
+### Feature Requests
+
+Provide:
+
+- **The Goal/Use Case**: What problem does this solve?
+- **Proposed Solution**: How would you implement it?
+- **Potential Implementation**: Technical details (optional)
+- **Impact & Roadmap Alignment**: How does this fit with Weaver's goals?
+- **Alternatives Considered**: What other approaches did you think about?
+
+## Community Volunteer Roles
+
+We're actively recruiting community volunteers for specialized roles:
+
+### 1. Issue/PR Reviewers
+
+**Mission**: Help triage, evaluate, and merge the growing volume of PRs and issues.
+
+**Focus**: Preliminary merging and community health (efficiency optimization and security audits are handled by specialized roles).
+
+### 2. Resource Optimization Experts
+
+**Mission**: Keep Weaver lean by analyzing and trimming unnecessary dependencies.
+
+**Focus**: Analyzing resource growth between releases and reducing redundancy.
+
+**Priority**: RAM usage optimization > Binary size reduction.
+
+### 3. Security Audit & Bug Fixes
+
+**Mission**: Review network security and AI permission management.
+
+**Focus**: Auditing the codebase for vulnerabilities and implementing robust fixes.
+
+### 4. Documentation & DX (Developer Experience)
+
+**Mission**: Create clear, beginner-friendly documentation.
+
+**Focus**: Step-by-step guides for both setup and development.
+
+### 5. AI-Powered CI/CD Optimization
+
+**Mission**: Use AI to manage Weaver's build and issue resolution processes.
+
+**Focus**: Automating builds and exploring AI-driven issue resolution.
+
+## How to Join
+
+### Fast Track
+
+Once you have **at least one merged PR**, you're eligible to join our **Developer Discord** to help plan the future of Weaver.
+
+### Application Track
+
+If you haven't submitted a PR yet but want to dive in, email **support@operator.onl** with the subject:
+
+> `[Apply: Weaver Expert Volunteer] + Your Desired Role`
+
+Include:
+- Brief introduction
+- Relevant experience or portfolio links
+
+We'll review all applications and grant project permissions to selected contributors!
+
+## Community Perks
+
+Developers who officially join community operations receive:
+
+- **Exclusive AI Hardware**: Our upcoming, unreleased AI device
+- **Token Discounts**: Potential discounts on LLM tokens (currently in negotiations with major providers)
+
+## Content Creators Welcome!
+
+Not a developer? You can still help!
+
+Post **Weaver reviews or tutorials**:
+
+- **Twitter**: Use the tag **#weaver** and mention **@Operator OnlineIO**
+- **Bilibili**: Mention **@Operator Online矽速科技** or send a DM
+
+High-quality content creators receive the same perks as community developers!
+
+## Code Standards
+
+- Follow Go best practices and idioms
+- Write clear, self-documenting code
+- Add tests for new features
+- Keep functions small and focused
+- Use meaningful variable and function names
+- Comment complex logic
+
+## Getting Help
+
+- **GitHub Issues**: For bug reports and feature requests
+- **Email**: support@operator.onl for volunteer applications
+- **Developer Discord**: For active contributors (after first merged PR)
+
+## License
+
+By contributing to Weaver, you agree that your contributions will be licensed under the MIT License.
+
+---
+
+Built with passion by the Weaver community. © 2026 **Operator Online**.

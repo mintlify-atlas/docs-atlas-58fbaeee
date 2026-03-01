@@ -1,0 +1,360 @@
+---
+title: weaver migrate
+description: Migrate configuration and workspace from OpenClaw to Weaver
+---
+
+The `migrate` command automates migration from OpenClaw to Weaver, transferring configuration settings and workspace files.
+
+## Usage
+
+```bash
+weaver migrate [options]
+```
+
+## Options
+
+<ParamField path="--dry-run" type="flag">
+  Preview migration without making changes
+  
+  Shows what would be migrated and displays summary.
+  
+  ```bash
+  weaver migrate --dry-run
+  ```
+</ParamField>
+
+<ParamField path="--refresh" type="flag">
+  Re-sync workspace files from OpenClaw
+  
+  Repeatable operation that updates workspace files without touching config.
+  
+  Useful for keeping workspace in sync during transition period.
+  
+  ```bash
+  weaver migrate --refresh
+  ```
+</ParamField>
+
+<ParamField path="--config-only" type="flag">
+  Migrate only configuration file
+  
+  Skips workspace file copying.
+  
+  ```bash
+  weaver migrate --config-only
+  ```
+</ParamField>
+
+<ParamField path="--workspace-only" type="flag">
+  Migrate only workspace files
+  
+  Skips configuration migration.
+  
+  ```bash
+  weaver migrate --workspace-only
+  ```
+</ParamField>
+
+<ParamField path="--force" type="flag">
+  Skip confirmation prompts
+  
+  Useful for automation and scripts.
+  
+  ```bash
+  weaver migrate --force
+  ```
+</ParamField>
+
+<ParamField path="--openclaw-home" type="string" default="~/.openclaw">
+  Override OpenClaw home directory
+  
+  ```bash
+  weaver migrate --openclaw-home /custom/openclaw/path
+  ```
+</ParamField>
+
+<ParamField path="--weaver-home" type="string" default="~/.weaver">
+  Override Weaver home directory
+  
+  ```bash
+  weaver migrate --weaver-home /custom/weaver/path
+  ```
+</ParamField>
+
+## Migration Process
+
+Migration handles:
+
+### 1. Configuration Mapping
+
+Transforms OpenClaw config to Weaver format:
+- **Providers:** API keys and endpoints
+- **Agent settings:** Model, temperature, max tokens
+- **Channels:** Telegram, Discord, Slack tokens
+- **Gateway:** Host and port settings
+
+### 2. Workspace Files
+
+Copies directory structure:
+```
+OpenClaw (~/.openclaw/workspace/)
+├── skills/
+├── cron/
+│   └── jobs.json
+└── state/
+
+↓ Migrates to ↓
+
+Weaver (~/.weaver/workspace/)
+├── skills/
+├── cron/
+│   └── jobs.json
+└── state/
+```
+
+### 3. Compatibility Checks
+
+Verifies:
+- OpenClaw config exists and is valid JSON
+- Target directories are writable
+- No conflicts with existing Weaver config (unless `--force`)
+
+## Examples
+
+<CodeGroup>
+```bash Preview migration
+$ weaver migrate --dry-run
+
+Detecting OpenClaw installation...
+✓ Found OpenClaw config at /home/user/.openclaw/config.json
+✓ Found OpenClaw workspace at /home/user/.openclaw/workspace
+
+Migration plan:
+---------------
+Config:
+  • Provider: openrouter (API key set)
+  • Model: anthropic/claude-3.5-sonnet
+  • Channels: telegram, discord
+
+Workspace:
+  • Skills: 5 directories
+  • Cron jobs: 3 jobs
+  • State files: 2 files
+
+This is a dry run - no files were changed.
+Run without --dry-run to perform migration.
+```
+
+```bash Full migration
+$ weaver migrate
+
+Detecting OpenClaw installation...
+✓ Found OpenClaw config
+✓ Found OpenClaw workspace
+
+Ready to migrate. This will:
+  1. Create ~/.weaver/config.json
+  2. Copy workspace files to ~/.weaver/workspace/
+
+Continue? (y/n): y
+
+Migrating configuration...
+✓ Config migrated
+
+Migrating workspace...
+✓ Copied 5 skills
+✓ Copied 3 cron jobs
+✓ Copied 2 state files
+
+--- Migration Summary ---
+Config: ✓ Migrated
+Workspace: ✓ Migrated (12 files)
+
+Next steps:
+  1. Test: weaver agent -m "Hello!"
+  2. Start gateway: weaver gateway
+```
+
+```bash Config only
+$ weaver migrate --config-only
+
+Migrating configuration only...
+✓ Config migrated
+
+--- Migration Summary ---
+Config: ✓ Migrated
+Workspace: Skipped (use --workspace-only to migrate)
+```
+
+```bash Refresh workspace
+$ weaver migrate --refresh
+
+Refreshing workspace files...
+✓ Updated 5 skills
+✓ Updated 3 cron jobs
+✓ Updated 2 state files
+
+--- Migration Summary ---
+Config: Skipped (already exists)
+Workspace: ✓ Refreshed (12 files)
+```
+
+```bash Force migration
+$ weaver migrate --force
+
+Migrating without confirmation...
+✓ Config migrated
+✓ Workspace migrated (12 files)
+
+--- Migration Summary ---
+Config: ✓ Migrated (overwritten)
+Workspace: ✓ Migrated (12 files)
+```
+
+```bash Custom paths
+$ weaver migrate \
+  --openclaw-home /opt/openclaw \
+  --weaver-home /opt/weaver
+
+Using custom paths:
+  OpenClaw: /opt/openclaw
+  Weaver: /opt/weaver
+
+✓ Config migrated
+✓ Workspace migrated (12 files)
+```
+
+```bash No OpenClaw found
+$ weaver migrate
+
+Error: OpenClaw installation not found at ~/.openclaw
+If OpenClaw is installed elsewhere, use:
+  weaver migrate --openclaw-home /path/to/openclaw
+```
+</CodeGroup>
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Success - migration completed |
+| 1 | OpenClaw not found |
+| 1 | Invalid configuration |
+| 1 | Permission denied |
+| 1 | File system error |
+
+## Error Handling
+
+### OpenClaw Not Found
+
+```bash
+Error: OpenClaw installation not found at ~/.openclaw
+```
+
+Solutions:
+- Verify OpenClaw is installed
+- Use `--openclaw-home` to specify custom path
+- Run `weaver onboard` instead for fresh setup
+
+### Invalid Configuration
+
+```bash
+Error: Failed to parse OpenClaw config: invalid JSON
+```
+
+OpenClaw config is corrupted. Fix manually or use `weaver onboard`.
+
+### Permission Denied
+
+```bash
+Error: Permission denied creating ~/.weaver/config.json
+```
+
+Ensure write permissions to home directory.
+
+### Existing Weaver Config
+
+```bash
+Weaver config already exists at ~/.weaver/config.json
+Overwrite? (y/n): 
+```
+
+Response options:
+- `y` - Overwrite with migrated config
+- `n` - Abort migration
+- Use `--force` to skip prompt
+
+## Migration Mapping
+
+OpenClaw → Weaver field mappings:
+
+| OpenClaw Field | Weaver Field | Notes |
+|----------------|--------------|-------|
+| `openrouter_api_key` | `providers.openrouter.api_key` | Direct copy |
+| `anthropic_api_key` | `providers.anthropic.api_key` | Direct copy |
+| `model` | `agents.defaults.model` | Default model |
+| `temperature` | `agents.defaults.temperature` | Inference parameter |
+| `telegram_token` | `channels.telegram.token` | Bot token |
+| `discord_token` | `channels.discord.token` | Bot token |
+| `gateway_port` | `gateway.port` | Server port |
+| `workspace` | `workspace` | Path mapping |
+
+## Post-Migration
+
+After migration:
+
+<Steps>
+  <Step title="Verify configuration">
+    ```bash
+    weaver status
+    ```
+    Check all settings migrated correctly.
+  </Step>
+  
+  <Step title="Test agent">
+    ```bash
+    weaver agent -m "Hello!"
+    ```
+    Ensure agent responds.
+  </Step>
+  
+  <Step title="Test gateway (optional)">
+    ```bash
+    weaver gateway
+    ```
+    Verify channels connect.
+  </Step>
+  
+  <Step title="Optional: Keep OpenClaw">
+    You can run both OpenClaw and Weaver simultaneously during transition.
+    
+    Use different ports in config to avoid conflicts.
+  </Step>
+</Steps>
+
+## Rollback
+
+If migration fails or causes issues:
+
+```bash
+# Remove Weaver config
+rm -rf ~/.weaver
+
+# OpenClaw remains untouched and functional
+```
+
+## Idempotency
+
+Migration is safe to run multiple times:
+- First run: Creates Weaver config and copies workspace
+- Subsequent runs: Prompts for overwrite or use `--force`
+- `--refresh`: Always safe, updates workspace only
+
+## Related Commands
+
+- [`weaver onboard`](/api/cli/onboard) - Fresh setup without OpenClaw
+- [`weaver status`](/api/cli/overview#status) - Verify migration
+
+<Info>
+  Migration does not modify or delete OpenClaw files. Your OpenClaw installation remains intact.
+</Info>

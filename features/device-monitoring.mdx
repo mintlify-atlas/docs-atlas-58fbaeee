@@ -1,0 +1,589 @@
+---
+title: Device Monitoring
+description: Real-time hardware event detection and notification system for USB hotplug and device state changes.
+---
+
+Weaver's device monitoring service provides real-time detection and notification of hardware events, enabling agents to respond to device connections, disconnections, and state changes.
+
+## Overview
+
+The device monitoring service:
+- Monitors USB hotplug events (Linux)
+- Detects device connections and disconnections
+- Sends notifications to active channels
+- Extensible architecture for future event sources
+
+**Supported Events:**
+- USB device hotplug (add/remove)
+- Future: Bluetooth, PCI, network interfaces
+
+## Architecture
+
+### Service Structure
+
+```go
+type Service struct {
+    bus     *bus.MessageBus     // Message routing
+    state   *state.Manager      // State management
+    sources []events.EventSource // Event sources
+    enabled bool                 // Service status
+    ctx     context.Context      // Cancellation
+    cancel  context.CancelFunc   // Stop function
+}
+```
+
+### Event Source Interface
+
+```go
+type EventSource interface {
+    Kind() events.Kind
+    Start(ctx context.Context) (<-chan *events.DeviceEvent, error)
+    Stop()
+}
+```
+
+### Device Event
+
+```go
+type DeviceEvent struct {
+    Kind       events.Kind        // "usb", "bluetooth", etc.
+    Action     string             // "add", "remove", "change"
+    DeviceID   string             // Unique identifier
+    DeviceName string             // Human-readable name
+    Vendor     string             // Vendor name
+    Product    string             // Product name
+    Serial     string             // Serial number
+    Metadata   map[string]string  // Additional properties
+    Timestamp  int64              // Unix milliseconds
+}
+```
+
+## Configuration
+
+### Creating the Service
+
+```go
+import "github.com/operatoronline/weaver/pkg/devices"
+
+config := devices.Config{
+    Enabled:    true,
+    MonitorUSB: true,
+}
+
+stateMgr := state.NewManager(workspace)
+service := devices.NewService(config, stateMgr)
+```
+
+### Configuration Options
+
+```go
+type Config struct {
+    Enabled    bool  // Enable device monitoring
+    MonitorUSB bool  // Monitor USB hotplug events
+    // Future:
+    // MonitorBluetooth bool
+    // MonitorPCI       bool
+}
+```
+
+## USB Monitoring (Linux)
+
+### Setup
+
+USB monitoring uses netlink sockets to listen for kernel uevent messages:
+
+```go
+import "github.com/operatoronline/weaver/pkg/devices/sources"
+
+usbMonitor := sources.NewUSBMonitor()
+eventCh, err := usbMonitor.Start(ctx)
+```
+
+### Event Detection
+
+**Device Added:**
+```go
+DeviceEvent{
+    Kind:       "usb",
+    Action:     "add",
+    DeviceID:   "2-1.1",
+    DeviceName: "USB Flash Drive",
+    Vendor:     "SanDisk",
+    Product:    "Cruzer Blade",
+    Serial:     "4C531001234567890123",
+}
+```
+
+**Device Removed:**
+```go
+DeviceEvent{
+    Kind:     "usb",
+    Action:   "remove",
+    DeviceID: "2-1.1",
+}
+```
+
+### Message Format
+
+Events are formatted for user notification:
+
+```go
+func (ev *DeviceEvent) FormatMessage() string {
+    if ev.Action == "add" {
+        return fmt.Sprintf("Device connected: %s (%s %s)",
+            ev.DeviceName, ev.Vendor, ev.Product)
+    }
+    return fmt.Sprintf("Device disconnected: %s", ev.DeviceName)
+}
+```
+
+**Example Messages:**
+```
+Device connected: USB Flash Drive (SanDisk Cruzer Blade)
+Device disconnected: USB Flash Drive
+Device connected: MaixCAM (Sipeed MaixCAM)
+```
+
+## Service Lifecycle
+
+### Starting the Service
+
+```go
+err := service.Start(ctx)
+if err != nil {
+    log.Fatalf("Failed to start device monitoring: %v", err)
+}
+```
+
+**Startup Flow:**
+1. Check if service is enabled
+2. Initialize event sources
+3. Start source monitors
+4. Launch event handlers
+5. Log startup status
+
+### Stopping the Service
+
+```go
+service.Stop()
+```
+
+**Shutdown Flow:**
+1. Cancel context (stops event loops)
+2. Stop all event sources
+3. Close event channels
+4. Log shutdown status
+
+## Event Routing
+
+### Channel Resolution
+
+Events are sent to the last active user channel:
+
+```go
+lastChannel := state.GetLastChannel()
+// Format: "platform:user_id"
+
+platform, userID := parseLastChannel(lastChannel)
+if platform == "" || userID == "" {
+    // No valid channel, skip notification
+    return
+}
+```
+
+### Internal Channel Filtering
+
+Internal channels are filtered out:
+
+```go
+if constants.IsInternalChannel(platform) {
+    // Skip: cli, system, cron, heartbeat
+    return
+}
+```
+
+**Valid channels:**
+- telegram
+- whatsapp
+- discord
+- slack
+
+### Message Delivery
+
+Events are delivered via the message bus:
+
+```go
+msgBus.PublishOutbound(bus.OutboundMessage{
+    Channel: platform,
+    ChatID:  userID,
+    Content: event.FormatMessage(),
+})
+```
+
+## Event Handling
+
+### Event Loop
+
+```go
+func (s *Service) handleEvents(kind events.Kind, eventCh <-chan *events.DeviceEvent) {
+    for ev := range eventCh {
+        if ev == nil {
+            continue
+        }
+        s.sendNotification(ev)
+    }
+}
+```
+
+**Flow:**
+1. Receive event from source channel
+2. Validate event (non-nil)
+3. Format notification message
+4. Resolve target channel
+5. Send via message bus
+6. Log delivery status
+
+## Linux Implementation Details
+
+### Netlink Socket
+
+USB monitoring uses netlink KOBJECT_UEVENT:
+
+```go
+import "golang.org/x/sys/unix"
+
+sock, err := unix.Socket(
+    unix.AF_NETLINK,
+    unix.SOCK_RAW,
+    unix.NETLINK_KOBJECT_UEVENT,
+)
+```
+
+### Uevent Parsing
+
+Kernel uevent messages are parsed:
+
+```
+ADD@/devices/pci0000:00/0000:00:14.0/usb2/2-1/2-1.1
+ACTION=add
+DEVPATH=/devices/pci0000:00/0000:00:14.0/usb2/2-1/2-1.1
+SUBSYSTEM=usb
+DEVNAME=bus/usb/002/003
+DEVTYPE=usb_device
+PRODUCT=781/5567/100
+TYPE=0/0/0
+```
+
+**Extracted Fields:**
+- `ACTION` → DeviceEvent.Action
+- `DEVPATH` → DeviceEvent.DeviceID
+- `PRODUCT` → Vendor/Product IDs
+- `DEVNAME` → Device path
+
+### Device Identification
+
+USB devices are identified by reading sysfs:
+
+```go
+vendor := readFile("/sys/bus/usb/devices/2-1.1/manufacturer")
+product := readFile("/sys/bus/usb/devices/2-1.1/product")
+serial := readFile("/sys/bus/usb/devices/2-1.1/serial")
+```
+
+## Use Cases
+
+### Camera Hotplug Detection
+
+**Scenario:** Notify when MaixCAM is connected/disconnected
+
+```go
+config := devices.Config{
+    Enabled:    true,
+    MonitorUSB: true,
+}
+service := devices.NewService(config, stateMgr)
+service.Start(ctx)
+```
+
+**User Notification:**
+```
+Device connected: MaixCAM (Sipeed MaixCAM)
+```
+
+**Agent Action:**
+Agent can respond to notification:
+- Initialize camera
+- Start video stream
+- Configure settings
+
+### Storage Device Monitoring
+
+**Scenario:** Auto-backup when USB drive is inserted
+
+**Implementation:**
+1. Device monitoring detects USB storage
+2. Notification sent to agent
+3. Agent identifies device as backup drive
+4. Agent spawns backup subagent
+
+**Heartbeat Integration:**
+```markdown
+# Heartbeat Tasks
+
+- Check if backup USB drive is connected
+- If connected and backup not recent, spawn backup task
+```
+
+### Hardware Development
+
+**Scenario:** Debug USB device during development
+
+**Workflow:**
+1. Connect development board
+2. Receive connection notification
+3. Agent checks device is recognized
+4. Agent runs initialization script
+
+## Advanced Configuration
+
+### Custom Event Sources
+
+Implement custom event sources:
+
+```go
+type CustomSource struct {
+    eventCh chan *events.DeviceEvent
+}
+
+func (s *CustomSource) Kind() events.Kind {
+    return "custom"
+}
+
+func (s *CustomSource) Start(ctx context.Context) (<-chan *events.DeviceEvent, error) {
+    s.eventCh = make(chan *events.DeviceEvent)
+    go s.monitor(ctx)
+    return s.eventCh, nil
+}
+
+func (s *CustomSource) Stop() {
+    close(s.eventCh)
+}
+
+func (s *CustomSource) monitor(ctx context.Context) {
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        default:
+            // Detect events and send to eventCh
+        }
+    }
+}
+```
+
+### Multi-Source Monitoring
+
+```go
+config := devices.Config{
+    Enabled:    true,
+    MonitorUSB: true,
+    // Future:
+    // MonitorBluetooth: true,
+    // MonitorPCI: true,
+}
+```
+
+## Event Filtering
+
+### Ignore Specific Devices
+
+Filter out unwanted devices:
+
+```go
+func (s *Service) shouldIgnore(ev *events.DeviceEvent) bool {
+    // Ignore input devices
+    if strings.Contains(ev.DeviceName, "Mouse") {
+        return true
+    }
+    if strings.Contains(ev.DeviceName, "Keyboard") {
+        return true
+    }
+    return false
+}
+```
+
+### Device Whitelisting
+
+Only notify for specific devices:
+
+```go
+allowedDevices := []string{"MaixCAM", "Arduino", "ESP32"}
+
+if !contains(allowedDevices, ev.Vendor) {
+    return // Skip notification
+}
+```
+
+## Logging
+
+Device events are logged:
+
+```go
+logger.InfoCF("devices", "Device notification sent", map[string]interface{}{
+    "kind":   ev.Kind,
+    "action": ev.Action,
+    "to":     platform,
+})
+```
+
+**Log Examples:**
+```
+[devices] Device source started {"kind": "usb"}
+[devices] Device notification sent {"kind": "usb", "action": "add", "to": "telegram"}
+[devices] Device event service stopped
+```
+
+## Error Handling
+
+### Source Start Failures
+
+```go
+for _, src := range s.sources {
+    eventCh, err := src.Start(s.ctx)
+    if err != nil {
+        logger.ErrorCF("devices", "Failed to start source", map[string]interface{}{
+            "kind":  src.Kind(),
+            "error": err.Error(),
+        })
+        continue // Try next source
+    }
+}
+```
+
+### Event Processing Errors
+
+```go
+for ev := range eventCh {
+    if ev == nil {
+        continue // Skip nil events
+    }
+    s.sendNotification(ev)
+}
+```
+
+### Channel Resolution Failures
+
+```go
+if lastChannel == "" {
+    logger.DebugCF("devices", "No last channel, skipping notification", map[string]interface{}{
+        "event": ev.FormatMessage(),
+    })
+    return
+}
+```
+
+## Performance Considerations
+
+### Resource Usage
+
+- **Memory:** One goroutine per event source
+- **CPU:** Idle when no events, active during processing
+- **Network:** Netlink socket (kernel events only)
+
+### Event Rate
+
+USB events are typically infrequent:
+- Device insertion: < 1 per minute
+- Device removal: < 1 per minute
+- No performance impact on system
+
+## Best Practices
+
+1. **Enable only needed sources:**
+   ```go
+   MonitorUSB: true,  // Only if using USB devices
+   ```
+
+2. **Filter irrelevant events:**
+   - Ignore common devices (mouse, keyboard)
+   - Whitelist important devices
+
+3. **Handle rapid reconnections:**
+   - Debounce events
+   - Aggregate multiple events
+
+4. **Test event handling:**
+   - Simulate device insertion/removal
+   - Verify notifications are sent
+   - Check log output
+
+5. **Monitor service health:**
+   - Check logs for source failures
+   - Verify event delivery
+   - Test with real devices
+
+## Platform Support
+
+### Linux
+- **USB Monitoring:** Full support via netlink
+- **Bluetooth:** Planned (BlueZ D-Bus)
+- **PCI:** Planned (uevent)
+
+### macOS
+- **USB Monitoring:** Planned (IOKit)
+- **Bluetooth:** Planned (CoreBluetooth)
+
+### Windows
+- **USB Monitoring:** Planned (WMI)
+- **Bluetooth:** Planned (Windows.Devices.Bluetooth)
+
+## Future Enhancements
+
+### Planned Event Sources
+
+1. **Bluetooth Monitoring**
+   - Device pairing/unpairing
+   - Connection state changes
+   - Signal strength monitoring
+
+2. **Network Interface Monitoring**
+   - Interface up/down
+   - IP address changes
+   - Connection state
+
+3. **PCI Device Monitoring**
+   - GPU hotplug
+   - Thunderbolt devices
+   - PCIe device changes
+
+### Event Aggregation
+
+Group related events:
+```
+3 USB devices connected:
+- MaixCAM (Sipeed)
+- Arduino Uno (Arduino LLC)
+- ESP32 DevKit (Espressif)
+```
+
+### Event History
+
+Maintain event log:
+```go
+type EventHistory struct {
+    Events     []*DeviceEvent
+    MaxEntries int
+}
+```
+
+### Conditional Notifications
+
+Notify based on rules:
+```go
+type NotificationRule struct {
+    DevicePattern string  // Regex pattern
+    Action        string  // "add", "remove", "*"
+    NotifyUser    bool    // Send notification
+    TriggerAgent  bool    // Trigger agent action
+}
+```

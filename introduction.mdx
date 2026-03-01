@@ -1,0 +1,89 @@
+---
+title: Introduction
+description: Ultra-efficient AI agent orchestration for high-density managed services
+---
+
+<div align="center">
+  <img src="/images/arch_v2.png" alt="Weaver Architecture" width="512" />
+</div>
+
+# Welcome to Weaver
+
+Weaver is a managed AI agent service designed for **high-density, low-latency orchestration**. Built from the ground up in Go, it enables the deployment of isolated, task-specific agents within Docker containers at scale.
+
+## Why Weaver?
+
+Weaver powers the agentic layer of the **Operator Online** ecosystem, optimized for the `gemini-3-flash` model, balancing rapid tool execution with minimal resource consumption.
+
+<CardGroup cols={2}>
+  <Card title="Fast" icon="bolt">
+    Less than 1 second boot time for instant agent deployment
+  </Card>
+  <Card title="Light" icon="feather">
+    Under 10MB RAM footprint per agent for maximum density
+  </Card>
+  <Card title="Isolated" icon="lock">
+    Workspace-based directory isolation with strict Docker boundaries
+  </Card>
+  <Card title="Universal" icon="globe">
+    Multi-channel gateway support (Telegram, Discord, Slack) with unified tool protocol
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Canvas Control
+Integrated `canvas` tool for direct manipulation of the Nest UI, enabling agents to create, update, and organize nodes programmatically.
+
+### Multi-Channel Gateway
+Central gateway dispatches messages from external channels (Telegram, Discord, Slack) to managed agents, providing a unified interface for all your communication needs.
+
+### Skills System
+Extensible skill architecture allows you to install custom capabilities from GitHub repositories or use built-in skills for common tasks.
+
+### Scheduled Tasks
+Built-in cron service for scheduling recurring agent tasks with flexible configuration options.
+
+## Efficiency Comparison
+
+<div align="center">
+  <img src="/images/compare_v2.png" alt="Weaver vs Heavyweight Agents" width="800" />
+</div>
+
+Weaver achieves 10x better resource efficiency compared to heavyweight agent frameworks while maintaining full functionality.
+
+## Get Started
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running in minutes with Docker
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install via Docker, binary, or build from source
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure workspace, models, and gateway settings
+  </Card>
+</CardGroup>
+
+## Architecture
+
+<div align="center">
+  <img src="/images/weaver_team.png" alt="Weaver Team" width="512" />
+</div>
+
+Weaver follows a modular architecture:
+
+- **Agent Loop**: Core processing engine for handling user messages and tool execution
+- **Gateway**: Long-running service that manages multiple channels and dispatches to agents
+- **Message Bus**: Event-driven communication between components
+- **Workspace**: Isolated persistent storage for each agent session
+- **Channels**: Pluggable integrations for Telegram, Discord, Slack, and more
+
+<Note>
+Weaver is designed to be spawned programmatically or via CLI, making it perfect for both interactive use and automated deployments.
+</Note>
+
+---
+
+&copy; 2026 **Operator Online**. Built for the next generation of agentic systems.

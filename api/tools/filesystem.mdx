@@ -1,0 +1,171 @@
+---
+title: 'Filesystem Tools'
+description: 'Read, write, and list files and directories with workspace isolation'
+---
+
+The filesystem tools provide secure file operations with optional workspace restriction to prevent path traversal attacks.
+
+## read_file
+
+Read the contents of a file.
+
+### Input Parameters
+
+<ParamField path="path" type="string" required>
+  Path to the file to read. Can be absolute or relative to workspace.
+</ParamField>
+
+### Response
+
+Returns the complete file contents as a string.
+
+<ResponseField name="content" type="string">
+  The file contents
+</ResponseField>
+
+### Usage Example
+
+```json
+{
+  "path": "/workspace/config.json"
+}
+```
+
+### Error Conditions
+
+- `path is required` - Missing path parameter
+- `failed to read file` - File does not exist or permission denied
+- `access denied: path is outside the workspace` - Path traversal attempt when workspace restriction is enabled
+- `access denied: symlink resolves outside workspace` - Symlink escape attempt blocked
+
+---
+
+## write_file
+
+Write content to a file. Creates parent directories automatically if they don't exist.
+
+### Input Parameters
+
+<ParamField path="path" type="string" required>
+  Path to the file to write. Parent directories will be created automatically.
+</ParamField>
+
+<ParamField path="content" type="string" required>
+  Content to write to the file
+</ParamField>
+
+### Response
+
+Returns a silent result (not shown to user, only logged for LLM).
+
+<ResponseField name="message" type="string">
+  Confirmation message: `File written: {path}`
+</ResponseField>
+
+### Usage Example
+
+```json
+{
+  "path": "/workspace/output.txt",
+  "content": "Hello, world!"
+}
+```
+
+### Error Conditions
+
+- `path is required` - Missing path parameter
+- `content is required` - Missing content parameter
+- `failed to create directory` - Cannot create parent directories
+- `failed to write file` - Permission denied or disk full
+- `access denied: path is outside the workspace` - Path traversal blocked
+
+---
+
+## list_dir
+
+List files and directories in a path.
+
+### Input Parameters
+
+<ParamField path="path" type="string" default=".">
+  Path to list. Defaults to current directory if not specified.
+</ParamField>
+
+### Response
+
+Returns a formatted list of directory entries.
+
+<ResponseField name="entries" type="string">
+  Multi-line string with format:
+  - `DIR:  {name}` for directories
+  - `FILE: {name}` for files
+</ResponseField>
+
+### Usage Example
+
+```json
+{
+  "path": "/workspace/src"
+}
+```
+
+**Example Output:**
+```
+DIR:  pkg
+DIR:  cmd
+FILE: go.mod
+FILE: go.sum
+FILE: README.md
+```
+
+### Error Conditions
+
+- `failed to read directory` - Directory does not exist or permission denied
+- `access denied: path is outside the workspace` - Path traversal blocked
+
+---
+
+## Security Features
+
+### Workspace Restriction
+
+When `restrict=true` is enabled during tool initialization:
+
+- All paths are validated to be within the workspace directory
+- Symlinks are resolved and checked to prevent escape attacks
+- Path traversal patterns (`../`) are blocked
+- Both absolute and relative paths are normalized and validated
+
+### Example Attack Prevention
+
+```go
+// workspace: /home/user/project
+// restrict: true
+
+// Blocked: Absolute path outside workspace
+read_file({"path": "/etc/passwd"}) 
+// Error: access denied: path is outside the workspace
+
+// Blocked: Relative path traversal
+read_file({"path": "../../etc/passwd"})
+// Error: access denied: path is outside the workspace
+
+// Blocked: Symlink escape
+read_file({"path": "/home/user/project/link_to_etc"})
+// Error: access denied: symlink resolves outside workspace
+
+// Allowed: Path within workspace
+read_file({"path": "/home/user/project/data/file.txt"})
+// Returns file contents
+```
+
+## Implementation Details
+
+**File permissions:**
+- Directories created with `0755` permissions
+- Files written with `0644` permissions
+
+**Path resolution:**
+- Relative paths are resolved against workspace directory
+- Absolute paths are validated if workspace restriction is enabled
+- Symlinks are followed and validated recursively

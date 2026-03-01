@@ -1,0 +1,438 @@
+---
+title: Workspace
+description: Understanding Weaver's workspace isolation and file management system
+---
+
+## Overview
+
+The **workspace** is Weaver's isolated directory structure where each agent stores its memory, session history, and operates on files. It provides the foundation for secure, multi-tenant agent deployment.
+
+## Directory Structure
+
+A typical Weaver workspace follows this layout:
+
+```plaintext
+~/.weaver/workspace/
+├── AGENT.md              # Agent identity and instructions
+├── sessions/             # Conversation history
+│   ├── cli:default.json
+│   └── telegram:123.json
+├── cron/                 # Scheduled tasks
+│   └── jobs.json
+├── .state.json           # Atomic state (last channel, etc.)
+├── skills/               # Custom agent skills
+│   └── weather/
+│       └── SKILL.md
+└── [user files]          # Agent-created files
+```
+
+<Info>
+  The workspace path defaults to `~/.weaver/workspace` but can be configured in `config.json` or overridden with Docker volume mounts.
+</Info>
+
+## Workspace Isolation
+
+Weaver provides two levels of file system isolation:
+
+<Tabs>
+  <Tab title="Restricted Mode (Recommended)">
+    When `restrict_to_workspace: true` in config:
+
+    ```json
+    {
+      "agents": {
+        "defaults": {
+          "restrict_to_workspace": true
+        }
+      }
+    }
+    ```
+
+    All file operations are confined to the workspace:
+
+    ```go
+    func (t *ReadFileTool) Execute(args map[string]interface{}) *ToolResult {
+        path := args["path"].(string)
+        
+        if t.restrict {
+            // Resolve absolute path and check prefix
+            absPath, _ := filepath.Abs(path)
+            if !strings.HasPrefix(absPath, t.workspace) {
+                return ErrorResult("Access denied: outside workspace")
+            }
+        }
+        // ...
+    }
+    ```
+
+    <Check>Use restricted mode for production deployments and untrusted environments</Check>
+  </Tab>
+
+  <Tab title="Unrestricted Mode">
+    When `restrict_to_workspace: false`:
+
+    - Agent can read/write any file the process has permission for
+    - Useful for system administration tasks
+    - Required for certain hardware tools (I2C, SPI)
+
+    <Warning>Only use unrestricted mode in trusted, single-user environments</Warning>
+  </Tab>
+</Tabs>
+
+## Core Workspace Files
+
+### AGENT.md
+
+Defines the agent's identity and behavior:
+
+```markdown
+# Agent Instructions
+
+You are a helpful AI assistant. Be concise, accurate, and friendly.
+
+## Guidelines
+
+- Always explain what you're doing before taking actions
+- Ask for clarification when request is ambiguous
+- Use tools to help accomplish tasks
+- Remember important information in your memory files
+```
+
+<Tip>
+  Edit `AGENT.md` to customize your agent's personality, domain expertise, and operating procedures.
+</Tip>
+
+### Session Files
+
+Stored in `sessions/<session-key>.json`:
+
+```json
+{
+  "key": "telegram:123456",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello!"
+    },
+    {
+      "role": "assistant",
+      "content": "Hi! How can I help you today?",
+      "tool_calls": []
+    }
+  ],
+  "summary": "",
+  "created": 1704067200000,
+  "updated": 1704070800000
+}
+```
+
+Session management from `pkg/session/manager.go:15-30`:
+
+```go
+type SessionManager struct {
+    sessionsDir string
+    cache       map[string]*Session
+    mu          sync.RWMutex
+}
+
+func (sm *SessionManager) GetHistory(key string) []providers.Message {
+    // Load from cache or disk
+}
+
+func (sm *SessionManager) AddMessage(key, role, content string) {
+    // Add to session and mark dirty
+}
+
+func (sm *SessionManager) Save(key string) error {
+    // Atomic write to disk
+}
+```
+
+<Note>
+  Session files are loaded lazily on first access and cached in memory. Changes are persisted immediately with atomic writes.
+</Note>
+
+### State File
+
+The `.state.json` file stores atomic state that must survive crashes:
+
+```go
+type Manager struct {
+    workspace string
+    state     *State
+    mu        sync.RWMutex
+}
+
+type State struct {
+    LastChannel string `json:"last_channel"` // e.g., "telegram:123456"
+    LastChatID  string `json:"last_chat_id"`
+}
+```
+
+Used by heartbeat and device notification systems:
+
+```go
+// Record last active channel
+al.state.SetLastChannel(fmt.Sprintf("%s:%s", channel, chatID))
+
+// Later: send notification to last active channel
+lastChannel := stateManager.GetLastChannel()
+```
+
+<Info>
+  The state file uses atomic writes (write to temp + rename) to prevent corruption during crashes.
+</Info>
+
+## Workspace Configuration
+
+### Docker Volume Mounting
+
+For isolated agent instances:
+
+```bash
+docker run --rm \
+  -v $(pwd)/workspaces/agent-1:/root/.weaver/workspace \
+  -e GEMINI_API_KEY=$GEMINI_API_KEY \
+  operatoronline/weaver agent -m "Task description"
+```
+
+Each workspace is completely isolated:
+
+```bash
+workspaces/
+├── agent-1/          # User A's agent
+│   └── sessions/
+├── agent-2/          # User B's agent
+│   └── sessions/
+└── shared-bot/       # Shared service agent
+    └── sessions/
+```
+
+### Gateway Configuration
+
+In `config.json`:
+
+```json
+{
+  "workspace": {
+    "path": "/root/.weaver/workspace",
+    "auto_create": true
+  },
+  "agents": {
+    "defaults": {
+      "restrict_to_workspace": true
+    }
+  }
+}
+```
+
+Workspace path resolution from `pkg/config/config.go`:
+
+```go
+func (c *Config) WorkspacePath() string {
+    if c.Workspace.Path != "" {
+        return expandPath(c.Workspace.Path)
+    }
+    home, _ := os.UserHomeDir()
+    return filepath.Join(home, ".weaver", "workspace")
+}
+```
+
+## File Operations
+
+All file tools operate within the workspace context:
+
+<CodeGroup>
+  ```go Read File
+  type ReadFileTool struct {
+      workspace string
+      restrict  bool
+  }
+
+  func (t *ReadFileTool) Execute(args map[string]interface{}) *ToolResult {
+      path := args["path"].(string)
+      
+      // Resolve relative paths from workspace
+      if !filepath.IsAbs(path) {
+          path = filepath.Join(t.workspace, path)
+      }
+      
+      // Check restrictions
+      if t.restrict && !isWithinWorkspace(path, t.workspace) {
+          return ErrorResult("Access denied")
+      }
+      
+      content, err := os.ReadFile(path)
+      return SuccessResult(string(content))
+  }
+  ```
+
+  ```go Write File
+  type WriteFileTool struct {
+      workspace string
+      restrict  bool
+  }
+
+  func (t *WriteFileTool) Execute(args map[string]interface{}) *ToolResult {
+      path := args["path"].(string)
+      content := args["content"].(string)
+      
+      // Same workspace resolution and restrictions
+      // ...
+      
+      // Atomic write (temp + rename)
+      tmpPath := path + ".tmp"
+      os.WriteFile(tmpPath, []byte(content), 0644)
+      os.Rename(tmpPath, path)
+      
+      return SuccessResult(fmt.Sprintf("Wrote %d bytes", len(content)))
+  }
+  ```
+
+  ```go Edit File
+  type EditFileTool struct {
+      workspace string
+      restrict  bool
+  }
+
+  func (t *EditFileTool) Execute(args map[string]interface{}) *ToolResult {
+      path := args["path"].(string)
+      lineNum := args["line"].(int)
+      newContent := args["content"].(string)
+      
+      // Read, modify, write back
+      lines := readLines(path)
+      lines[lineNum-1] = newContent
+      writeLines(path, lines)
+      
+      return SuccessResult("File edited successfully")
+  }
+  ```
+</CodeGroup>
+
+<Warning>
+  File tools perform atomic operations where possible (temp file + rename) to prevent corruption from interrupted writes.
+</Warning>
+
+## Shell Execution Context
+
+The `exec` tool runs commands with workspace as the working directory:
+
+```go
+type ExecTool struct {
+    workspace string
+    restrict  bool
+}
+
+func (t *ExecTool) Execute(args map[string]interface{}) *ToolResult {
+    cmd := exec.Command("sh", "-c", command)
+    cmd.Dir = t.workspace  // Set working directory
+    
+    if t.restrict {
+        // Set environment to prevent escaping workspace
+        cmd.Env = []string{
+            "HOME=" + t.workspace,
+            "PWD=" + t.workspace,
+        }
+    }
+    
+    output, err := cmd.CombinedOutput()
+    return SuccessResult(string(output))
+}
+```
+
+<Tip>
+  Use `cd` freely in shell commands - the working directory is always the workspace by default.
+</Tip>
+
+## Cron Jobs
+
+Scheduled tasks are stored in `cron/jobs.json`:
+
+```json
+{
+  "jobs": [
+    {
+      "id": "job-abc123",
+      "name": "Daily backup",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 2 * * *"
+      },
+      "message": "Backup all important files to archive/",
+      "enabled": true,
+      "deliver": true,
+      "channel": "telegram",
+      "to": "123456"
+    }
+  ]
+}
+```
+
+Manage via CLI:
+
+```bash
+# Add recurring job
+weaver cron add \
+  --name "Daily backup" \
+  --cron "0 2 * * *" \
+  --message "Backup all important files" \
+  --deliver --channel telegram --to 123456
+
+# Or interval-based
+weaver cron add \
+  --name "Monitor disk" \
+  --every 300 \
+  --message "Check disk usage and alert if >80%"
+```
+
+## Skills Directory
+
+Custom skills extend agent capabilities:
+
+```plaintext
+workspace/skills/
+├── weather/
+│   ├── SKILL.md          # Skill documentation
+│   └── api_key.txt       # Skill-specific config
+└── database/
+    ├── SKILL.md
+    └── schema.sql
+```
+
+Skills are loaded at agent startup from:
+1. Workspace skills directory (`workspace/skills/`)
+2. Global skills directory (`~/.weaver/skills/`)
+3. Built-in skills (`~/.weaver/weaver/skills/`)
+
+See [Skills documentation](/customize/skills) for details.
+
+## Backup and Migration
+
+Workspace portability:
+
+```bash
+# Backup entire workspace
+tar -czf agent-backup.tar.gz ~/.weaver/workspace/
+
+# Restore on new system
+tar -xzf agent-backup.tar.gz -C ~/
+
+# Or migrate from OpenClaw
+weaver migrate --refresh
+```
+
+<Tip>
+  Workspace directories are self-contained. Copy the entire workspace folder to migrate an agent to a new system.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Loop" icon="rotate" href="/concepts/agents">
+    Understand how agents process messages
+  </Card>
+  <Card title="Skills" icon="puzzle-piece" href="/customize/skills">
+    Learn how to create custom skills
+  </Card>
+</CardGroup>

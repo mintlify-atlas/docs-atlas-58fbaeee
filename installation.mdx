@@ -1,0 +1,466 @@
+---
+title: Installation
+description: Install Weaver via Docker, pre-built binaries, or build from source
+---
+
+# Installation
+
+Weaver can be installed in multiple ways depending on your needs. Choose the method that works best for your environment.
+
+## Docker (Recommended)
+
+Docker is the easiest way to get started with Weaver, providing consistent environments and easy updates.
+
+<Steps>
+
+### Pull the Image
+
+Get the latest Weaver image from Docker Hub:
+
+```bash
+docker pull operatoronline/weaver:latest
+```
+
+### Initialize Configuration
+
+Create your Weaver home directory and configuration:
+
+```bash
+docker run --rm -v ~/.weaver:/root/.weaver operatoronline/weaver onboard
+```
+
+### Verify Installation
+
+Check that Weaver is working:
+
+```bash
+docker run --rm operatoronline/weaver version
+```
+
+You should see output like:
+
+```
+🕸️ weaver v1.0.0
+  Build: 2026-03-01T10:00:00Z
+  Go: go1.26.0
+```
+
+</Steps>
+
+<Note>
+The Docker image is built with a multi-stage process, resulting in a minimal runtime image (~50MB) with only essential dependencies.
+</Note>
+
+## Pre-built Binaries
+
+Download pre-compiled binaries for your platform from the [releases page](https://github.com/operatoronline/weaver/releases).
+
+<Tabs>
+  <Tab title="Linux">
+    ```bash
+    # Download latest release
+    curl -L -o weaver.tar.gz https://github.com/operatoronline/weaver/releases/latest/download/weaver-linux-amd64.tar.gz
+    
+    # Extract
+    tar xzf weaver.tar.gz
+    
+    # Move to PATH
+    sudo mv weaver /usr/local/bin/
+    
+    # Verify
+    weaver version
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    # Download latest release
+    curl -L -o weaver.tar.gz https://github.com/operatoronline/weaver/releases/latest/download/weaver-darwin-amd64.tar.gz
+    
+    # Extract
+    tar xzf weaver.tar.gz
+    
+    # Move to PATH
+    sudo mv weaver /usr/local/bin/
+    
+    # Verify
+    weaver version
+    ```
+  </Tab>
+  
+  <Tab title="Windows">
+    ```powershell
+    # Download from releases page
+    # https://github.com/operatoronline/weaver/releases/latest
+    
+    # Extract the zip file
+    # Add weaver.exe to your PATH
+    
+    # Verify
+    weaver version
+    ```
+  </Tab>
+</Tabs>
+
+### Initialize After Binary Install
+
+Once the binary is installed, initialize your configuration:
+
+```bash
+weaver onboard
+```
+
+This creates:
+- `~/.weaver/config.json` - Configuration file
+- `~/.weaver/workspace/` - Agent workspace directory
+
+## Build from Source
+
+For development or customization, build Weaver from source.
+
+<Steps>
+
+### Prerequisites
+
+Ensure you have:
+- Go 1.21 or later
+- Git
+- Make (optional, for convenience)
+
+```bash
+go version  # Should be 1.21+
+```
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/operatoronline/weaver.git
+cd weaver
+```
+
+### Install Dependencies
+
+Download Go module dependencies:
+
+```bash
+go mod download
+```
+
+### Build the Binary
+
+<CodeGroup>
+
+```bash Using Make
+make build
+
+# Binary will be at ./build/weaver
+./build/weaver version
+```
+
+```bash Manual Build
+go build -o weaver ./cmd/weaver
+
+# Run the binary
+./weaver version
+```
+
+```bash With Version Info
+VERSION=$(git describe --tags --always)
+GIT_COMMIT=$(git rev-parse --short HEAD)
+BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+go build -ldflags "\
+  -X main.version=${VERSION} \
+  -X main.gitCommit=${GIT_COMMIT} \
+  -X main.buildTime=${BUILD_TIME}" \
+  -o weaver ./cmd/weaver
+```
+
+</CodeGroup>
+
+### Install Locally
+
+Move the binary to your PATH:
+
+```bash
+sudo mv ./build/weaver /usr/local/bin/
+# or
+sudo mv ./weaver /usr/local/bin/
+```
+
+### Initialize Configuration
+
+```bash
+weaver onboard
+```
+
+</Steps>
+
+## Docker Build
+
+Build your own Docker image from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/operatoronline/weaver.git
+cd weaver
+
+# Build the image
+docker build -t weaver:local .
+
+# Run it
+docker run --rm weaver:local version
+```
+
+### Dockerfile Overview
+
+The multi-stage Dockerfile ensures minimal image size:
+
+<CodeGroup>
+
+```dockerfile Stage 1: Build
+FROM golang:1.26.0-alpine AS builder
+
+RUN apk add --no-cache git make
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build binary
+COPY . .
+RUN make build
+```
+
+```dockerfile Stage 2: Runtime
+FROM alpine:3.23
+
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget -q --spider http://localhost:18790/health || exit 1
+
+# Copy binary and initialize
+COPY --from=builder /src/build/weaver /usr/local/bin/weaver
+RUN /usr/local/bin/weaver onboard
+
+ENTRYPOINT ["weaver"]
+CMD ["gateway"]
+```
+
+</CodeGroup>
+
+## Post-Installation
+
+### Configure API Keys
+
+Edit your configuration file to add API keys:
+
+```bash
+nano ~/.weaver/config.json
+```
+
+Add your preferred provider:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "api_key": "sk-or-v1-your-key-here"
+    },
+    "gemini": {
+      "api_key": "your-gemini-key"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": "google/gemini-flash-1.5"
+    }
+  }
+}
+```
+
+### Verify Installation
+
+Check your installation status:
+
+```bash
+weaver status
+```
+
+Expected output:
+
+```
+🕸️ weaver Status
+Version: v1.0.0
+
+Config: /home/user/.weaver/config.json ✓
+Workspace: /home/user/.weaver/workspace ✓
+Model: google/gemini-flash-1.5
+OpenRouter API: ✓
+Gemini API: ✓
+```
+
+### Test Your Installation
+
+Run a simple query:
+
+```bash
+weaver agent -m "Hello, world!"
+```
+
+## Available Commands
+
+Weaver provides several commands:
+
+<CodeGroup>
+
+```bash Agent Commands
+# Interactive mode
+weaver agent
+
+# One-shot query
+weaver agent -m "Your message"
+
+# Custom session
+weaver agent -s "project-alpha" -m "Status update"
+
+# Debug mode
+weaver agent --debug -m "Test"
+```
+
+```bash Gateway Commands
+# Start gateway
+weaver gateway
+
+# With debug logging
+weaver gateway --debug
+```
+
+```bash Utility Commands
+# Show version
+weaver version
+
+# Show status
+weaver status
+
+# Initialize configuration
+weaver onboard
+```
+
+```bash Skills Management
+# List installed skills
+weaver skills list
+
+# Install from GitHub
+weaver skills install operator.onl/weaver-skills/weather
+
+# Install built-in skills
+weaver skills install-builtin
+
+# Remove skill
+weaver skills remove weather
+```
+
+```bash Cron Management
+# List scheduled jobs
+weaver cron list
+
+# Add recurring job
+weaver cron add -n "morning-report" \
+  -m "Generate daily report" \
+  -e 86400
+
+# Remove job
+weaver cron remove <job-id>
+```
+
+</CodeGroup>
+
+## Updating Weaver
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    # Pull latest image
+    docker pull operatoronline/weaver:latest
+    
+    # Restart your containers
+    docker compose down
+    docker compose up -d
+    ```
+  </Tab>
+  
+  <Tab title="Binary">
+    ```bash
+    # Download new version
+    curl -L -o weaver.tar.gz https://github.com/operatoronline/weaver/releases/latest/download/weaver-linux-amd64.tar.gz
+    
+    # Replace binary
+    tar xzf weaver.tar.gz
+    sudo mv weaver /usr/local/bin/
+    
+    # Verify
+    weaver version
+    ```
+  </Tab>
+  
+  <Tab title="Source">
+    ```bash
+    cd weaver
+    git pull origin main
+    make build
+    sudo mv ./build/weaver /usr/local/bin/
+    ```
+  </Tab>
+</Tabs>
+
+## Uninstalling
+
+<Warning>
+This will remove all configuration and workspace data. Make sure to back up any important data first.
+</Warning>
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    # Remove containers
+    docker compose down -v
+    
+    # Remove image
+    docker rmi operatoronline/weaver
+    
+    # Remove data
+    rm -rf ~/.weaver
+    ```
+  </Tab>
+  
+  <Tab title="Binary">
+    ```bash
+    # Remove binary
+    sudo rm /usr/local/bin/weaver
+    
+    # Remove data
+    rm -rf ~/.weaver
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with your first agent
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Customize your Weaver setup
+  </Card>
+  <Card title="Skills" icon="puzzle-piece" href="/skills">
+    Extend capabilities with skills
+  </Card>
+  <Card title="Gateway" icon="server" href="/gateway">
+    Deploy multi-channel gateway
+  </Card>
+</CardGroup>

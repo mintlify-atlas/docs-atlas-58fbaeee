@@ -1,0 +1,293 @@
+---
+title: 'Health Check API'
+description: 'Monitor service health, readiness, and system status'
+---
+
+## Overview
+
+Weaver provides multiple health check endpoints to monitor service availability and system status. These endpoints are essential for load balancers, orchestration systems, and monitoring tools.
+
+## Health Endpoint
+
+```
+GET /health
+```
+
+Basic health check that returns service uptime and status. This endpoint always returns 200 OK when the server is running.
+
+### Response Fields
+
+<ResponseField name="status" type="string">
+  Always returns `"ok"` when the service is running
+</ResponseField>
+
+<ResponseField name="uptime" type="string">
+  Service uptime duration (e.g., `"2h15m30s"`)
+</ResponseField>
+
+### Example Request
+
+```bash
+curl http://localhost:8080/health
+```
+
+### Example Response
+
+```json
+{
+  "status": "ok",
+  "uptime": "2h15m30s"
+}
+```
+
+## Ready Endpoint
+
+```
+GET /ready
+```
+
+Readiness check that indicates whether the service is ready to accept requests. This endpoint performs health checks and returns 503 Service Unavailable if the service is not ready.
+
+### Response Status Codes
+
+- `200 OK` - Service is ready to accept requests
+- `503 Service Unavailable` - Service is not ready (starting up or failing health checks)
+
+### Response Fields
+
+<ResponseField name="status" type="string">
+  Either `"ready"` or `"not ready"`
+</ResponseField>
+
+<ResponseField name="uptime" type="string">
+  Service uptime duration (e.g., `"2h15m30s"`)
+</ResponseField>
+
+<ResponseField name="checks" type="object">
+  Map of health check results, each containing:
+  
+  - `name` (string) - Name of the health check
+  - `status` (string) - Either `"ok"` or `"fail"`
+  - `message` (string) - Optional status message
+  - `timestamp` (string) - ISO 8601 timestamp of the check
+</ResponseField>
+
+### Example: Service Ready
+
+```bash
+curl http://localhost:8080/ready
+```
+
+```json
+{
+  "status": "ready",
+  "uptime": "2h15m30s",
+  "checks": {
+    "database": {
+      "name": "database",
+      "status": "ok",
+      "message": "Connected",
+      "timestamp": "2026-03-01T10:30:00Z"
+    },
+    "agent_loop": {
+      "name": "agent_loop",
+      "status": "ok",
+      "message": "Running",
+      "timestamp": "2026-03-01T10:30:00Z"
+    }
+  }
+}
+```
+
+### Example: Service Not Ready
+
+```bash
+curl http://localhost:8080/ready
+```
+
+```
+HTTP/1.1 503 Service Unavailable
+```
+
+```json
+{
+  "status": "not ready",
+  "checks": {
+    "database": {
+      "name": "database",
+      "status": "fail",
+      "message": "Connection timeout",
+      "timestamp": "2026-03-01T10:30:00Z"
+    }
+  }
+}
+```
+
+## Admin Status Endpoint
+
+```
+GET /admin/status
+```
+
+Returns detailed system status including internal metrics and agent loop information. This endpoint should be protected in production environments.
+
+### Response Fields
+
+<ResponseField name="uptime" type="string">
+  Service uptime duration
+</ResponseField>
+
+<ResponseField name="ready" type="boolean">
+  Whether the service is ready to accept requests
+</ResponseField>
+
+<ResponseField name="..." type="various">
+  Additional system metrics provided by the agent loop (memory usage, active sessions, queue depth, etc.)
+</ResponseField>
+
+### Example Request
+
+```bash
+curl http://localhost:8080/admin/status
+```
+
+### Example Response
+
+```json
+{
+  "uptime": "2h15m30s",
+  "ready": true,
+  "active_sessions": 5,
+  "queue_depth": 2,
+  "memory_usage_mb": 512,
+  "goroutines": 47
+}
+```
+
+## Admin Service Endpoint
+
+```
+GET /admin/service
+```
+
+Returns systemd service status (Linux only). Executes `systemctl status weaver` and returns the output.
+
+### Response Fields
+
+<ResponseField name="output" type="string">
+  Raw output from `systemctl status weaver` command
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if the command failed
+</ResponseField>
+
+### Example Request
+
+```bash
+curl http://localhost:8080/admin/service
+```
+
+### Example Response
+
+```json
+{
+  "output": "● weaver.service - Weaver AI Agent\n   Loaded: loaded (/etc/systemd/system/weaver.service; enabled)\n   Active: active (running) since Sun 2026-03-01 08:00:00 UTC; 2h ago\n   Main PID: 1234 (weaver)\n   Tasks: 47\n   Memory: 512.0M\n   CGroup: /system.slice/weaver.service\n           └─1234 /usr/local/bin/weaver serve"
+}
+```
+
+## Admin Logs Endpoint
+
+```
+GET /admin/logs
+```
+
+Returns recent service logs (Linux only). Executes `journalctl -u weaver -n 100 --no-pager` to retrieve the last 100 log entries.
+
+### Response Fields
+
+<ResponseField name="output" type="string">
+  Raw output from `journalctl` command
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if the command failed
+</ResponseField>
+
+### Example Request
+
+```bash
+curl http://localhost:8080/admin/logs
+```
+
+### Example Response
+
+```json
+{
+  "output": "Mar 01 10:30:00 server weaver[1234]: INFO Starting agent loop\nMar 01 10:30:01 server weaver[1234]: INFO Health server listening on :8080\nMar 01 10:30:15 server weaver[1234]: INFO Received chat request session=user-123\n..."
+}
+```
+
+## Integration with Orchestration
+
+### Kubernetes Liveness Probe
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+```
+
+### Kubernetes Readiness Probe
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 3
+```
+
+### Docker Compose Health Check
+
+```yaml
+services:
+  weaver:
+    image: weaver:latest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+## Implementation Details
+
+The health endpoints are implemented in `/home/daytona/workspace/source/pkg/health/server.go` and provide:
+
+- `/health` at line 233 - Basic liveness check
+- `/ready` at line 246 - Readiness check with health validations
+- `/admin/status` at line 136 - Detailed system metrics
+- `/admin/service` at line 147 - Systemd service status
+- `/admin/logs` at line 159 - Recent service logs
+
+## Registering Custom Health Checks
+
+Health checks can be registered programmatically using the `RegisterCheck` method:
+
+```go
+server.RegisterCheck("database", func() (bool, string) {
+    if db.Ping() == nil {
+        return true, "Connected"
+    }
+    return false, "Connection failed"
+})
+```
+
+Registered checks are automatically included in the `/ready` endpoint response.

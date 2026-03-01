@@ -1,0 +1,393 @@
+---
+title: Tools
+description: Comprehensive guide to Weaver's tool system - built-in tools, custom tools, and the tool registry.
+---
+
+Weaver provides a powerful tool system that enables AI agents to interact with files, execute commands, search the web, communicate with hardware, and more. All tools implement a common interface and are managed through a centralized registry.
+
+## Tool Interface
+
+Every tool in Weaver implements the `Tool` interface:
+
+```go
+type Tool interface {
+    Name() string
+    Description() string
+    Parameters() map[string]interface{}
+    Execute(ctx context.Context, args map[string]interface{}) *ToolResult
+}
+```
+
+### Tool Result Types
+
+Tools return structured `ToolResult` objects with different semantics:
+
+- **NewToolResult(forLLM)** - Basic result sent to LLM
+- **SilentResult(forLLM)** - Sent to LLM only, no user notification
+- **AsyncResult(forLLM)** - Long-running background operation
+- **ErrorResult(message)** - Error condition
+- **UserResult(content)** - Sent to both LLM and user
+
+## Built-in Tools
+
+### File System Tools
+
+#### read_file
+Read file contents with workspace security.
+
+**Parameters:**
+- `path` (string, required) - File path to read
+
+**Example:**
+```json
+{
+  "path": "config.yaml"
+}
+```
+
+#### write_file
+Write content to a file, creating directories as needed.
+
+**Parameters:**
+- `path` (string, required) - File path
+- `content` (string, required) - Content to write
+
+#### edit_file
+Edit files by replacing exact text matches.
+
+**Parameters:**
+- `path` (string, required) - File path
+- `old_text` (string, required) - Exact text to find
+- `new_text` (string, required) - Replacement text
+
+**Safety:** Fails if `old_text` appears multiple times or not at all.
+
+#### append_file
+Append content to the end of a file.
+
+**Parameters:**
+- `path` (string, required) - File path
+- `content` (string, required) - Content to append
+
+#### list_dir
+List files and directories.
+
+**Parameters:**
+- `path` (string, required) - Directory path
+
+**Returns:** Formatted list with DIR/FILE prefixes.
+
+### Shell Execution
+
+#### exec
+Execute shell commands with safety guards.
+
+**Parameters:**
+- `command` (string, required) - Shell command
+- `working_dir` (string, optional) - Working directory
+
+**Safety Features:**
+- Blocks dangerous patterns (rm -rf, format, dd, etc.)
+- 60-second timeout
+- Optional workspace restriction
+- Path traversal protection
+
+**Example:**
+```json
+{
+  "command": "git status",
+  "working_dir": "/workspace/project"
+}
+```
+
+### Web Tools
+
+#### web_search
+Search the web using Brave API or DuckDuckGo.
+
+**Parameters:**
+- `query` (string, required) - Search query
+- `count` (integer, optional) - Number of results (1-10)
+
+**Providers:**
+- **Brave Search** - Requires API key, better results
+- **DuckDuckGo** - No API key, HTML scraping fallback
+
+#### web_fetch
+Fetch and extract readable content from URLs.
+
+**Parameters:**
+- `url` (string, required) - URL to fetch
+- `maxChars` (integer, optional) - Maximum characters (default: 50000)
+
+**Features:**
+- HTML to text extraction
+- JSON formatting
+- Automatic content type detection
+- Truncation handling
+
+### Communication Tools
+
+#### message
+Send messages to users on chat channels.
+
+**Parameters:**
+- `content` (string, required) - Message content
+- `channel` (string, optional) - Target channel
+- `chat_id` (string, optional) - Target chat ID
+
+**Context:** Uses current channel/chat if not specified.
+
+### Agent Orchestration
+
+#### subagent
+Execute tasks synchronously with an independent agent instance.
+
+**Parameters:**
+- `task` (string, required) - Task description
+- `label` (string, optional) - Display label
+
+**Returns:** Full execution result after completion.
+
+**Use Cases:**
+- Delegating specific subtasks
+- Isolating tool access
+- Parallel task execution
+
+#### spawn
+Spawn background subagent tasks asynchronously.
+
+**Parameters:**
+- `task` (string, required) - Task description
+- `label` (string, optional) - Display label
+
+**Behavior:** Returns immediately, notifies on completion.
+
+**Use Cases:**
+- Long-running operations
+- Fire-and-forget tasks
+- Background monitoring
+
+### Scheduling
+
+#### cron
+Schedule reminders, tasks, or commands.
+
+**Actions:**
+- `add` - Create new scheduled job
+- `list` - List all jobs
+- `remove` - Delete job by ID
+- `enable` / `disable` - Toggle job
+
+**Schedule Types:**
+- `at_seconds` - One-time reminder (seconds from now)
+- `every_seconds` - Recurring interval
+- `cron_expr` - Cron expression (e.g., "0 9 * * *")
+
+**Parameters:**
+- `message` (string) - Reminder/task message
+- `command` (string, optional) - Shell command to execute
+- `deliver` (boolean) - Direct delivery vs agent processing
+
+**Example:**
+```json
+{
+  "action": "add",
+  "message": "Check email",
+  "at_seconds": 600,
+  "deliver": true
+}
+```
+
+### Hardware Tools (Linux Only)
+
+#### i2c
+Interact with I2C bus devices for sensors and peripherals.
+
+**Actions:**
+- `detect` - List available I2C buses
+- `scan` - Find devices on a bus
+- `read` - Read bytes from device
+- `write` - Send bytes to device
+
+**Parameters:**
+- `bus` (string) - Bus number (e.g., "1" for /dev/i2c-1)
+- `address` (integer) - 7-bit device address (0x03-0x77)
+- `register` (integer, optional) - Register address
+- `data` (array, optional) - Bytes to write
+- `length` (integer, optional) - Bytes to read
+- `confirm` (boolean) - Required for write operations
+
+**Example:**
+```json
+{
+  "action": "read",
+  "bus": "1",
+  "address": 56,
+  "register": 0,
+  "length": 2
+}
+```
+
+#### spi
+High-speed SPI bus communication.
+
+**Actions:**
+- `list` - Find available SPI devices
+- `transfer` - Full-duplex send/receive
+- `read` - Receive bytes
+
+**Parameters:**
+- `device` (string) - Device ID (e.g., "2.0" for /dev/spidev2.0)
+- `speed` (integer) - Clock speed in Hz (default: 1MHz)
+- `mode` (integer) - SPI mode 0-3
+- `bits` (integer) - Bits per word (default: 8)
+- `data` (array) - Bytes to send
+- `length` (integer) - Bytes to read
+- `confirm` (boolean) - Required for transfers
+
+### Image Generation
+
+#### generate_image
+Generate images using Gemini 3 Pro Image.
+
+**Parameters:**
+- `prompt` (string, required) - Image description
+- `resolution` (string) - "1K", "2K", or "4K"
+- `aspect_ratio` (string) - "1:1", "3:4", "4:3", "9:16", "16:9"
+
+**Output:** Returns data URI (base64) for immediate use.
+
+## Tool Registry
+
+The `ToolRegistry` manages all available tools:
+
+```go
+registry := tools.NewToolRegistry()
+registry.Register(tools.NewReadFileTool(workspace, true))
+registry.Register(tools.NewExecTool(workspace, false))
+```
+
+### Registry Methods
+
+- `Register(tool Tool)` - Add tool to registry
+- `Get(name string)` - Retrieve tool by name
+- `Execute(ctx, name, args)` - Execute tool
+- `ExecuteWithContext(ctx, name, args, channel, chatID, callback)` - Execute with session context
+- `GetDefinitions()` - Get all tool schemas
+- `ToProviderDefs()` - Convert to LLM provider format
+- `List()` - Get all tool names
+- `Count()` - Get tool count
+- `GetSummaries()` - Human-readable tool list
+
+## Advanced Interfaces
+
+### ContextualTool
+
+Tools can implement `ContextualTool` to receive session context:
+
+```go
+type ContextualTool interface {
+    Tool
+    SetContext(channel, chatID string)
+}
+```
+
+### AsyncTool
+
+Tools can implement `AsyncTool` for background operations:
+
+```go
+type AsyncTool interface {
+    Tool
+    SetCallback(cb AsyncCallback)
+}
+```
+
+**Async Callback:**
+```go
+type AsyncCallback func(ctx context.Context, result *ToolResult)
+```
+
+## Creating Custom Tools
+
+```go
+type MyTool struct {
+    config string
+}
+
+func (t *MyTool) Name() string {
+    return "my_tool"
+}
+
+func (t *MyTool) Description() string {
+    return "Does something amazing"
+}
+
+func (t *MyTool) Parameters() map[string]interface{} {
+    return map[string]interface{}{
+        "type": "object",
+        "properties": map[string]interface{}{
+            "input": map[string]interface{}{
+                "type": "string",
+                "description": "Input parameter",
+            },
+        },
+        "required": []string{"input"},
+    }
+}
+
+func (t *MyTool) Execute(ctx context.Context, args map[string]interface{}) *tools.ToolResult {
+    input, _ := args["input"].(string)
+    // Do work
+    return tools.NewToolResult(fmt.Sprintf("Processed: %s", input))
+}
+```
+
+## Security & Safety
+
+### Workspace Restriction
+Most file and exec tools support workspace restriction to prevent access outside project boundaries.
+
+### Command Guards
+The exec tool blocks dangerous patterns:
+- `rm -rf`, `del /f`
+- `format`, `mkfs`, `diskpart`
+- `dd if=`
+- Writes to disk devices
+- `shutdown`, `reboot`
+- Fork bombs
+
+### Path Validation
+All file operations validate paths and resolve symlinks to prevent escapes.
+
+### Write Confirmations
+Hardware tools (I2C, SPI) require `confirm: true` for write operations.
+
+## Best Practices
+
+1. **Use SilentResult** for operations users don't need to see
+2. **Use AsyncResult** for long-running tasks
+3. **Validate inputs** before execution
+4. **Return detailed errors** with actionable messages
+5. **Set context** for tools that need session information
+6. **Implement timeouts** for network/external operations
+7. **Log execution** for debugging and monitoring
+
+## Tool Execution Flow
+
+1. LLM decides to use a tool
+2. Registry validates tool exists
+3. Context is set (if ContextualTool)
+4. Callback is set (if AsyncTool)
+5. Tool executes with args
+6. Result is logged and returned
+7. LLM receives result in next turn
+
+## Performance Considerations
+
+- Tools execute sequentially in the agent loop
+- Use `spawn` for parallel operations
+- Set appropriate timeouts
+- Truncate large outputs
+- Cache expensive operations when possible

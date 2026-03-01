@@ -1,0 +1,135 @@
+---
+title: weaver onboard
+description: Initialize Weaver configuration and workspace
+---
+
+The `onboard` command sets up Weaver for first-time use by creating the configuration file and workspace directory with default templates.
+
+## Usage
+
+```bash
+weaver onboard
+```
+
+## What It Does
+
+1. **Creates configuration** at `~/.weaver/config.json`
+2. **Creates workspace** directory with embedded templates
+3. **Prompts for overwrite** if config already exists
+4. **Displays next steps** for API key setup
+
+## Interactive Example
+
+<CodeGroup>
+```bash First run
+$ weaver onboard
+🕸️ weaver is ready!
+
+Next steps:
+  1. Add your API key to /home/user/.weaver/config.json
+     Get one at: https://openrouter.ai/keys
+  2. Chat: weaver agent -m "Hello!"
+```
+
+```bash Config exists
+$ weaver onboard
+Config already exists at /home/user/.weaver/config.json
+Overwrite? (y/n): n
+Aborted.
+```
+</CodeGroup>
+
+## Generated Files
+
+### Configuration File
+
+Location: `~/.weaver/config.json`
+
+Contains:
+- Provider settings (OpenRouter, Anthropic, OpenAI, etc.)
+- Agent defaults (model, temperature, max tokens)
+- Gateway configuration (host, port)
+- Channel settings (Telegram, Discord, Slack)
+- Workspace path
+
+### Workspace Directory
+
+Default location: `~/.weaver/workspace/`
+
+Structure:
+```
+workspace/
+├── skills/         # Custom agent skills
+├── cron/          # Scheduled task definitions
+│   └── jobs.json
+└── state/         # Runtime state storage
+```
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Success - config and workspace created |
+| 1 | Failed to save config or create workspace |
+
+## Error Conditions
+
+```bash
+Error saving config: permission denied
+```
+Ensure you have write permissions to `~/.weaver/`
+
+```bash
+Error copying workspace templates: ...
+```
+Workspace directory creation failed - check disk space and permissions
+
+## Next Steps
+
+After onboarding:
+
+<Steps>
+  <Step title="Add API Key">
+    Edit `~/.weaver/config.json` and add your OpenRouter API key:
+    ```json
+    "openrouter": {
+      "api_key": "sk-or-..."
+    }
+    ```
+  </Step>
+  
+  <Step title="Test Agent">
+    Verify setup with a test message:
+    ```bash
+    weaver agent -m "Hello!"
+    ```
+  </Step>
+  
+  <Step title="Start Gateway (Optional)">
+    Launch the gateway server for channel integrations:
+    ```bash
+    weaver gateway
+    ```
+  </Step>
+</Steps>
+
+## Configuration Override
+
+To re-run onboarding and overwrite existing config:
+
+```bash
+$ weaver onboard
+Config already exists at /home/user/.weaver/config.json
+Overwrite? (y/n): y
+🕸️ weaver is ready!
+```
+
+<Warning>
+  Overwriting will reset all custom configuration. Back up your config first if you have custom settings.
+</Warning>
+
+## Related Commands
+
+- [`weaver status`](/api/cli/overview#status) - Verify onboarding success
+- [`weaver agent`](/api/cli/agent) - Start using the agent
+- [`weaver migrate`](/api/cli/migrate) - Migrate from OpenClaw instead of onboarding

@@ -1,0 +1,406 @@
+---
+title: Local Models
+description: Run AI models locally with Ollama, vLLM, and self-hosted deployments
+---
+
+Weaver supports running AI models locally for privacy, cost savings, and offline operation. This guide covers Ollama, vLLM, and custom OpenAI-compatible endpoints.
+
+## Supported Local Providers
+
+- **Ollama**: Easy local model deployment
+- **vLLM**: High-performance inference server
+- **Custom Endpoints**: Any OpenAI-compatible API
+
+## Ollama
+
+[Ollama](https://ollama.ai/) provides the easiest way to run models locally.
+
+### 1. Install Ollama
+
+```bash
+# macOS / Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows
+# Download from https://ollama.ai/download
+```
+
+### 2. Pull Models
+
+```bash
+# Pull Llama 3.1
+ollama pull llama3.1
+
+# Pull Qwen 2.5
+ollama pull qwen2.5:14b
+
+# Pull Mistral
+ollama pull mistral
+```
+
+### 3. Configure Weaver
+
+Add to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "ollama",
+      "model": "ollama/llama3.1"
+    }
+  }
+}
+```
+
+<Note>
+  API key is not required for Ollama. The `api_key` field can be empty or omitted.
+</Note>
+
+### 4. Usage
+
+```bash
+# Use Llama 3.1
+weaver chat --model ollama/llama3.1
+
+# Use Qwen 2.5
+weaver chat --model ollama/qwen2.5:14b
+
+# Use Mistral
+weaver chat --model ollama/mistral
+```
+
+### Model Name Format
+
+Ollama models use the format `ollama/model-name:tag`:
+
+- `ollama/llama3.1` - Latest Llama 3.1
+- `ollama/qwen2.5:14b` - Qwen 2.5 14B parameter version
+- `ollama/mistral:7b-instruct` - Mistral 7B Instruct
+
+Weaver automatically strips the `ollama/` prefix when sending to Ollama API.
+
+Source: `pkg/providers/http_provider.go:55-62`
+
+## vLLM
+
+[vLLM](https://github.com/vllm-project/vllm) is a high-performance inference server for LLMs.
+
+### 1. Install vLLM
+
+```bash
+pip install vllm
+```
+
+### 2. Start Server
+
+```bash
+# Start with Llama 3.1 8B
+python -m vllm.entrypoints.openai.api_server \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --port 8000
+
+# With GPU acceleration
+python -m vllm.entrypoints.openai.api_server \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --tensor-parallel-size 2 \
+  --port 8000
+```
+
+### 3. Configure Weaver
+
+Add to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8000/v1"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "vllm",
+      "model": "meta-llama/Llama-3.1-8B-Instruct"
+    }
+  }
+}
+```
+
+### 4. Usage
+
+```bash
+weaver chat --model meta-llama/Llama-3.1-8B-Instruct
+```
+
+## Custom OpenAI-Compatible Endpoints
+
+Weaver works with any OpenAI-compatible API endpoint.
+
+### Local Server Examples
+
+#### LocalAI
+
+```json
+{
+  "providers": {
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8080/v1"
+    }
+  }
+}
+```
+
+#### LM Studio
+
+```json
+{
+  "providers": {
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:1234/v1"
+    }
+  }
+}
+```
+
+#### Jan
+
+```json
+{
+  "providers": {
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:1337/v1"
+    }
+  }
+}
+```
+
+## Configuration Options
+
+<ParamField path="api_key" type="string">
+  API key for authentication (optional for local servers)
+</ParamField>
+
+<ParamField path="api_base" type="string">
+  Local server endpoint URL (e.g., `http://localhost:11434/v1`)
+</ParamField>
+
+<ParamField path="proxy" type="string">
+  HTTP/HTTPS proxy URL (optional)
+</ParamField>
+
+## Model Parameters
+
+Configure model behavior:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "ollama/llama3.1",
+      "max_tokens": 4096,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+<ParamField path="max_tokens" type="integer" default="4096">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="temperature" type="float" default="0.7">
+  Controls randomness (0.0 = deterministic, 2.0 = very random)
+</ParamField>
+
+## Popular Local Models
+
+### Llama Family
+
+```bash
+# Llama 3.1 8B (Recommended)
+ollama pull llama3.1
+
+# Llama 3.1 70B (High capability)
+ollama pull llama3.1:70b
+
+# Llama 3.1 405B (Largest)
+ollama pull llama3.1:405b
+```
+
+### Qwen Family
+
+```bash
+# Qwen 2.5 7B
+ollama pull qwen2.5
+
+# Qwen 2.5 14B
+ollama pull qwen2.5:14b
+
+# Qwen 2.5 32B
+ollama pull qwen2.5:32b
+```
+
+### Other Models
+
+```bash
+# Mistral 7B
+ollama pull mistral
+
+# Mixtral 8x7B
+ollama pull mixtral
+
+# DeepSeek Coder
+ollama pull deepseek-coder
+
+# Phi-3
+ollama pull phi3
+```
+
+## Implementation Details
+
+Weaver uses the **HTTPProvider** for all local model providers:
+
+- OpenAI-compatible API format
+- Standard `/chat/completions` endpoint
+- Automatic model namespace handling
+- Tool calling support (if supported by server)
+
+Source: `pkg/providers/http_provider.go`
+
+### Automatic Provider Detection
+
+Weaver automatically uses Ollama when:
+
+```go
+// From http_provider.go:442-450
+case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
+  apiKey = cfg.Providers.Ollama.APIKey
+  apiBase = cfg.Providers.Ollama.APIBase
+  proxy = cfg.Providers.Ollama.Proxy
+  if apiBase == "" {
+    apiBase = "http://localhost:11434/v1"
+  }
+```
+
+### Model Name Stripping
+
+```go
+// From http_provider.go:55-62
+if idx := strings.Index(model, "/"); idx != -1 {
+  prefix := model[:idx]
+  if prefix == "moonshot" || prefix == "nvidia" || prefix == "groq" || prefix == "ollama" {
+    model = model[idx+1:]
+  }
+}
+```
+
+This strips provider prefixes before sending to the API.
+
+## Hardware Requirements
+
+### Model Size Guidelines
+
+| Model Size | RAM Required | GPU VRAM | Example Models |
+|------------|--------------|----------|----------------|
+| 7B params | 8GB | 6GB | Llama 3.1 8B, Mistral 7B |
+| 13-14B params | 16GB | 12GB | Qwen 2.5 14B |
+| 30-34B params | 32GB | 24GB | Mixtral 8x7B |
+| 70B params | 64GB | 48GB | Llama 3.1 70B |
+
+### Performance Tips
+
+1. **Use GPU acceleration** for faster inference
+2. **Quantize models** (4-bit, 8-bit) to reduce memory usage
+3. **Use smaller models** for development and testing
+4. **Batch requests** when processing multiple prompts
+
+## Troubleshooting
+
+### Ollama Issues
+
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/v1/models
+
+# Restart Ollama
+ollama serve
+
+# List installed models
+ollama list
+```
+
+### vLLM Issues
+
+```bash
+# Check server status
+curl http://localhost:8000/v1/models
+
+# Check logs
+python -m vllm.entrypoints.openai.api_server --help
+
+# Increase timeout for large models
+export VLLM_TIMEOUT=600
+```
+
+### Common Errors
+
+<AccordionGroup>
+  <Accordion title="Connection Refused">
+    - Verify the server is running
+    - Check the port number is correct
+    - Ensure no firewall is blocking the connection
+    - Try `curl http://localhost:PORT/v1/models`
+  </Accordion>
+  
+  <Accordion title="Out of Memory">
+    - Use a smaller model
+    - Enable quantization (4-bit or 8-bit)
+    - Reduce `max_tokens` in configuration
+    - Close other applications
+  </Accordion>
+  
+  <Accordion title="Slow Inference">
+    - Use GPU acceleration if available
+    - Try a smaller model
+    - Increase vLLM tensor parallel size
+    - Reduce context window size
+  </Accordion>
+  
+  <Accordion title="Model Not Found">
+    - For Ollama: Run `ollama pull model-name`
+    - For vLLM: Verify model name matches HuggingFace
+    - Check `ollama list` to see installed models
+  </Accordion>
+</AccordionGroup>
+
+## Privacy Benefits
+
+Running models locally provides:
+
+- **Complete privacy**: Data never leaves your machine
+- **No API costs**: No per-token pricing
+- **Offline operation**: Works without internet
+- **Full control**: Customize models and parameters
+- **No rate limits**: Process as many requests as your hardware allows
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Provider Overview" icon="arrow-left" href="/integrations/providers/overview">
+    Back to all providers
+  </Card>
+  <Card title="Model Selection" icon="scale-balanced" href="/guides/model-selection">
+    Choose the right model
+  </Card>
+</CardGroup>

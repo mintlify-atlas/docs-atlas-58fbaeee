@@ -1,0 +1,189 @@
+---
+title: 'Shell Execution Tool'
+description: 'Execute shell commands with safety guards and timeout protection'
+---
+
+The `exec` tool executes shell commands with built-in safety guards to prevent dangerous operations.
+
+## exec
+
+Execute a shell command and return its output.
+
+### Input Parameters
+
+<ParamField path="command" type="string" required>
+  The shell command to execute. Uses `sh -c` on Unix/Linux or `powershell` on Windows.
+</ParamField>
+
+<ParamField path="working_dir" type="string">
+  Optional working directory for the command. Defaults to the tool's configured working directory.
+</ParamField>
+
+### Response
+
+Returns combined stdout and stderr output.
+
+<ResponseField name="output" type="string">
+  Command output with format:
+  ```
+  {stdout}
+  STDERR:
+  {stderr}
+  ```
+  
+  If command fails, includes exit code:
+  ```
+  {output}
+  Exit code: {error}
+  ```
+</ResponseField>
+
+### Usage Examples
+
+**Basic command:**
+```json
+{
+  "command": "ls -la"
+}
+```
+
+**With working directory:**
+```json
+{
+  "command": "npm install",
+  "working_dir": "/workspace/frontend"
+}
+```
+
+**Multiple commands:**
+```json
+{
+  "command": "git add . && git commit -m 'Update' && git push"
+}
+```
+
+### Output Behavior
+
+- Maximum output length: 10,000 characters
+- Longer output is truncated with message: `... (truncated, {N} more chars)`
+- Both stdout and stderr are captured and returned
+- Empty output returns: `(no output)`
+
+### Error Conditions
+
+**Validation errors:**
+- `command is required` - Missing command parameter
+
+**Safety guard blocks:**
+- `Command blocked by safety guard (dangerous pattern detected)` - Dangerous command detected
+- `Command blocked by safety guard (not in allowlist)` - Command not in allowlist (if configured)
+- `Command blocked by safety guard (path traversal detected)` - Path traversal with workspace restriction enabled
+- `Command blocked by safety guard (path outside working dir)` - Absolute path outside workspace
+
+**Execution errors:**
+- `Command timed out after {duration}` - Command exceeded timeout (default: 60s)
+- Command output with exit code for failed commands
+
+---
+
+## Safety Guards
+
+### Dangerous Pattern Detection
+
+The following patterns are automatically blocked:
+
+| Pattern | Description | Example |
+|---------|-------------|----------|
+| `rm -rf` / `rm -fr` | Recursive force delete | `rm -rf /` |
+| `del /f` / `del /q` | Windows force delete | `del /f C:\\*` |
+| `rmdir /s` | Windows recursive delete | `rmdir /s C:\\Users` |
+| `format` / `mkfs` / `diskpart` | Disk formatting | `format C:` |
+| `dd if=` | Direct disk write | `dd if=/dev/zero of=/dev/sda` |
+| `> /dev/sd[a-z]` | Write to disk device | `echo x > /dev/sda` |
+| `shutdown` / `reboot` / `poweroff` | System power operations | `shutdown -h now` |
+| Fork bomb pattern | Self-replicating process | `:(){ :\|:& };:` |
+
+### Workspace Restriction
+
+When `restrictToWorkspace=true`:
+
+- Commands containing `../` path traversal are blocked
+- Absolute paths in commands are validated to be within workspace
+- Prevents reading/writing files outside the working directory
+
+**Example:**
+```json
+// With workspace: /home/user/project
+// restrictToWorkspace: true
+
+{"command": "cat ../../etc/passwd"}
+// Error: Command blocked by safety guard (path traversal detected)
+
+{"command": "cat /etc/passwd"}
+// Error: Command blocked by safety guard (path outside working dir)
+
+{"command": "cat ./config.json"}
+// Allowed: Path within workspace
+```
+
+### Allowlist Mode
+
+Optionally configure an allowlist of permitted command patterns:
+
+```go
+tool.SetAllowPatterns([]string{
+  `^git `,       // Only git commands
+  `^npm `,       // Only npm commands  
+  `^docker `,    // Only docker commands
+})
+```
+
+When allowlist is configured, ONLY matching commands are permitted.
+
+---
+
+## Configuration Options
+
+### Timeout
+
+**Default:** 60 seconds
+
+```go
+tool.SetTimeout(120 * time.Second) // 2 minutes
+```
+
+Commands exceeding the timeout are terminated and return:
+```
+Command timed out after {duration}
+```
+
+### Platform Behavior
+
+**Linux/macOS:**
+- Uses `sh -c "{command}"`
+- POSIX-compliant shell execution
+
+**Windows:**
+- Uses `powershell -NoProfile -NonInteractive -Command "{command}"`
+- PowerShell execution environment
+
+---
+
+## Test Coverage
+
+From `shell_test.go`:
+
+**Success cases:**
+- Basic command execution with output capture
+- Custom working directory
+- Stderr capture alongside stdout
+
+**Failure cases:**
+- Non-existent command/path returns error with exit code
+- Timeout terminates long-running commands
+- Dangerous commands blocked by safety guards
+- Path traversal blocked with workspace restriction
+
+**Output handling:**
+- Long output (>10,000 chars) is truncated
+- Empty output returns placeholder message

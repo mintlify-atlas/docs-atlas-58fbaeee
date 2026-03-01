@@ -1,0 +1,513 @@
+---
+title: Heartbeat
+description: Proactive agent monitoring with periodic health checks and automated task execution.
+---
+
+The heartbeat service enables Weaver agents to proactively check for tasks, monitor systems, and take actions at regular intervals without explicit user prompts.
+
+## Overview
+
+Heartbeat runs a periodic check loop that:
+1. Reads tasks from `HEARTBEAT.md`
+2. Executes agent with heartbeat prompt
+3. Processes tool calls and responses
+4. Reports results to user (optional)
+
+**Use Cases:**
+- Monitoring device status
+- Checking for notifications
+- Periodic system health checks
+- Automated maintenance tasks
+- Scheduled reports
+
+## Configuration
+
+### Service Creation
+
+```go
+import "github.com/operatoronline/weaver/pkg/heartbeat"
+
+service := heartbeat.NewHeartbeatService(
+    workspace,      // Workspace directory
+    30,            // Interval in minutes
+    true,          // Enabled
+)
+```
+
+### Parameters
+
+- **workspace** (string) - Working directory containing `HEARTBEAT.md`
+- **intervalMinutes** (int) - Check interval (minimum: 5 minutes)
+- **enabled** (bool) - Service enabled status
+
+**Defaults:**
+- Minimum interval: 5 minutes
+- Default interval: 30 minutes
+- Initial delay: 1 second
+
+### Setting Up Dependencies
+
+```go
+// Set message bus for sending results
+service.SetBus(messageBus)
+
+// Set heartbeat handler
+handler := func(prompt, channel, chatID string) *tools.ToolResult {
+    // Execute agent with heartbeat prompt
+    return agentExecute(prompt, channel, chatID)
+}
+service.SetHandler(handler)
+```
+
+## Heartbeat File
+
+### HEARTBEAT.md Format
+
+The heartbeat file contains tasks for the agent to check:
+
+```markdown
+# Heartbeat Check List
+
+This file contains tasks for the heartbeat service to check periodically.
+
+## Examples
+
+- Check for unread messages
+- Review upcoming calendar events  
+- Check device status (e.g., MaixCam)
+
+## Instructions
+
+- Execute ALL tasks listed below. Do NOT skip any task.
+- For simple tasks (e.g., report current time), respond directly.
+- For complex tasks that may take time, use the spawn tool to create a subagent.
+- The spawn tool is async - subagent results will be sent to the user automatically.
+- After spawning a subagent, CONTINUE to process remaining tasks.
+- Only respond with HEARTBEAT_OK when ALL tasks are done AND nothing needs attention.
+
+---
+
+Add your heartbeat tasks below this line:
+
+- Check MaixCam status every 30 minutes
+- Review email for urgent messages
+- Monitor disk space on server
+```
+
+### Auto-Generation
+
+If `HEARTBEAT.md` doesn't exist, a default template is created on first run:
+
+```go
+service.Start() // Creates HEARTBEAT.md if missing
+```
+
+## Service Lifecycle
+
+### Starting the Service
+
+```go
+err := service.Start()
+if err != nil {
+    log.Fatalf("Failed to start heartbeat: %v", err)
+}
+```
+
+**Behavior:**
+- Loads configuration
+- Starts background ticker
+- Executes first heartbeat after 1 second
+- Runs subsequent checks at configured interval
+
+### Stopping the Service
+
+```go
+service.Stop()
+```
+
+**Behavior:**
+- Gracefully stops ticker
+- Waits for current heartbeat to complete
+- Closes background goroutine
+
+### Checking Status
+
+```go
+if service.IsRunning() {
+    fmt.Println("Heartbeat service is active")
+}
+```
+
+## Execution Flow
+
+### 1. Heartbeat Trigger
+
+Every interval (e.g., 30 minutes):
+```go
+ticker := time.NewTicker(interval)
+for {
+    select {
+    case <-ticker.C:
+        executeHeartbeat()
+    }
+}
+```
+
+### 2. Prompt Building
+
+Heartbeat reads `HEARTBEAT.md` and builds the prompt:
+
+```go
+func (hs *HeartbeatService) buildPrompt() string {
+    content := readFile("HEARTBEAT.md")
+    now := time.Now().Format("2006-01-02 15:04:05")
+    
+    return fmt.Sprintf(`# Heartbeat Check
+
+Current time: %s
+
+You are a proactive AI assistant. This is a scheduled heartbeat check.
+Review the following tasks and execute any necessary actions using available skills.
+If there is nothing that requires attention, respond ONLY with: HEARTBEAT_OK
+
+%s
+`, now, content)
+}
+```
+
+### 3. Handler Execution
+
+The handler processes the heartbeat:
+
+```go
+handler := func(prompt, channel, chatID string) *tools.ToolResult {
+    // Agent processes heartbeat prompt
+    // Can call tools, spawn subagents, etc.
+    result := agent.Process(prompt)
+    return result
+}
+```
+
+### 4. Result Processing
+
+**Silent (HEARTBEAT_OK):**
+```go
+if result.Silent {
+    // No action needed, user not notified
+    return
+}
+```
+
+**Async (spawned subagent):**
+```go
+if result.Async {
+    // Subagent running in background
+    // Will notify user when complete
+    return
+}
+```
+
+**User Notification:**
+```go
+if result.ForUser != "" {
+    msgBus.PublishOutbound(bus.OutboundMessage{
+        Channel: lastChannel,
+        ChatID:  lastChatID,
+        Content: result.ForUser,
+    })
+}
+```
+
+## Channel Resolution
+
+Heartbeat uses the last active channel for notifications:
+
+### State Management
+
+```go
+lastChannel := state.GetLastChannel()
+// Format: "platform:user_id" (e.g., "telegram:123456")
+
+platform, userID := parseLastChannel(lastChannel)
+```
+
+### Channel Validation
+
+Internal channels are filtered:
+```go
+if constants.IsInternalChannel(platform) {
+    // Skip cli, system, cron channels
+    return
+}
+```
+
+**Valid channels:**
+- telegram
+- whatsapp
+- discord
+- slack
+- etc.
+
+**Invalid (internal) channels:**
+- cli
+- system  
+- cron
+- heartbeat
+
+## Advanced Usage
+
+### Multi-Task Heartbeats
+
+Execute multiple checks in one heartbeat:
+
+```markdown
+## Tasks
+
+1. Check MaixCam camera status
+2. Review email inbox for priority items
+3. Monitor server disk space (spawn if over 80%)
+4. Check for GitHub notifications
+
+## Response Rules
+
+- Process ALL tasks before responding
+- Spawn subagents for time-consuming tasks
+- Only say HEARTBEAT_OK if nothing needs attention
+```
+
+### Using Spawn Tool
+
+For long-running tasks, use the `spawn` tool:
+
+**Agent's heartbeat response:**
+```json
+{
+  "tool_calls": [
+    {
+      "name": "spawn",
+      "args": {
+        "task": "Check all security cameras and report any offline devices",
+        "label": "camera-check"
+      }
+    }
+  ]
+}
+```
+
+**Result:**
+- Heartbeat completes immediately (async)
+- Subagent runs in background
+- User notified when subagent finishes
+
+### Conditional Responses
+
+Respond only when action is needed:
+
+```markdown
+## Disk Space Check
+
+- Check disk usage with `df -h`
+- If any partition is over 85%, spawn cleanup task
+- Otherwise, respond HEARTBEAT_OK
+```
+
+**Agent logic:**
+1. Call `exec` tool: `df -h`
+2. Parse output
+3. If usage > 85%: spawn cleanup subagent
+4. If usage < 85%: return `HEARTBEAT_OK`
+
+### Custom Intervals
+
+Adjust interval based on task urgency:
+
+```go
+// Critical monitoring: 5 minutes
+service := heartbeat.NewHeartbeatService(workspace, 5, true)
+
+// Regular checks: 30 minutes (default)
+service := heartbeat.NewHeartbeatService(workspace, 30, true)
+
+// Infrequent checks: 120 minutes
+service := heartbeat.NewHeartbeatService(workspace, 120, true)
+```
+
+## Logging
+
+Heartbeat maintains a log file:
+
+**Location:** `<workspace>/heartbeat.log`
+
+**Format:**
+```
+[2026-03-01 10:30:00] [INFO] Heartbeat service started
+[2026-03-01 10:30:01] [INFO] Executing heartbeat
+[2026-03-01 10:30:01] [INFO] Resolved channel: telegram, chatID: 123456
+[2026-03-01 10:30:02] [INFO] Async task started: Spawned subagent 'camera-check'
+[2026-03-01 10:31:00] [INFO] Heartbeat completed: HEARTBEAT_OK
+[2026-03-01 11:00:00] [ERROR] Heartbeat error: agent timeout
+```
+
+**Log Levels:**
+- **INFO** - Normal operations
+- **ERROR** - Execution failures
+
+## Error Handling
+
+### Handler Errors
+
+```go
+if result.IsError {
+    log.Printf("Heartbeat error: %s", result.ForLLM)
+    // Error logged, service continues
+    // Next heartbeat will retry
+}
+```
+
+### Missing HEARTBEAT.md
+
+```go
+if !fileExists("HEARTBEAT.md") {
+    createDefaultTemplate()
+    return "" // Skip this heartbeat
+}
+```
+
+### Channel Resolution Failure
+
+```go
+if channel == "" || chatID == "" {
+    // Result not sent to user
+    // Logged for debugging
+    return
+}
+```
+
+## Performance Considerations
+
+### Heartbeat Execution Time
+
+- Simple checks: < 1 second
+- With tools: 2-5 seconds
+- With spawn: 1-2 seconds (async)
+
+### Resource Usage
+
+- Memory: Minimal (single goroutine)
+- CPU: Idle between ticks, active during execution
+- Disk I/O: Read `HEARTBEAT.md`, write logs
+
+### Optimization Tips
+
+1. **Use spawn for heavy tasks:**
+   ```markdown
+   - Spawn subagent for backup verification (don't block heartbeat)
+   ```
+
+2. **Combine related checks:**
+   ```markdown
+   - Check all device statuses in one tool call
+   ```
+
+3. **Adjust interval appropriately:**
+   - Critical: 5-10 minutes
+   - Standard: 30 minutes
+   - Non-urgent: 60+ minutes
+
+## Best Practices
+
+1. **Keep tasks atomic:**
+   - One clear objective per task
+   - Easy to validate completion
+
+2. **Use HEARTBEAT_OK liberally:**
+   - Only notify user when action is needed
+   - Reduces notification fatigue
+
+3. **Leverage async operations:**
+   - Use `spawn` for time-consuming tasks
+   - Keep heartbeat execution fast
+
+4. **Document task expectations:**
+   - Clear success criteria
+   - Failure handling instructions
+
+5. **Monitor heartbeat logs:**
+   - Check for recurring errors
+   - Adjust tasks based on results
+
+6. **Test before deployment:**
+   - Run manual heartbeat check
+   - Verify tool availability
+   - Confirm channel routing
+
+## Example Configurations
+
+### DevOps Monitoring
+
+```markdown
+# Heartbeat Tasks
+
+- Check server CPU/memory with `top -b -n 1`
+- Monitor docker containers: `docker ps --filter status=exited`
+- Check disk space: `df -h`
+- Review nginx error logs for 5xx errors
+- If critical issues found, spawn alert subagent
+```
+
+### Personal Assistant
+
+```markdown
+# Heartbeat Tasks
+
+- Check calendar for events in next 2 hours
+- Review unread emails (priority inbox)
+- Check weather forecast for travel planning
+- Monitor package delivery status
+- Update daily task list
+```
+
+### IoT Device Management
+
+```markdown  
+# Heartbeat Tasks
+
+- Check MaixCam status: `curl http://maixcam.local/status`
+- Read temperature sensor via I2C (bus 1, addr 0x38)
+- Monitor security camera connectivity
+- Check smart home hub connection
+- Report any offline devices
+```
+
+## Integration with Other Features
+
+### Heartbeat + Cron
+
+Use cron for specific schedules, heartbeat for general monitoring:
+
+**Cron:** "Daily backup at 2 AM"
+**Heartbeat:** "Check if backup completed successfully"
+
+### Heartbeat + Skills
+
+Load skills for domain-specific heartbeats:
+
+```markdown
+# Heartbeat Tasks (requires hardware skill)
+
+- Use I2C tool to read AHT20 sensor
+- Check temperature is within normal range (0-50°C)
+- If abnormal, spawn alert subagent
+```
+
+### Heartbeat + Device Monitoring
+
+Respond to device events:
+
+```markdown
+# Heartbeat Tasks
+
+- Check if any USB devices were hotplugged
+- Verify MaixCam is still connected
+- Restart camera service if needed
+```

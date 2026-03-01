@@ -1,0 +1,265 @@
+---
+title: 'Web Tools'
+description: 'Search the web and fetch content from URLs'
+---
+
+Web tools enable agents to search for information and retrieve content from the internet.
+
+## web_search
+
+Search the web for current information using Brave Search or DuckDuckGo.
+
+### Input Parameters
+
+<ParamField path="query" type="string" required>
+  Search query string
+</ParamField>
+
+<ParamField path="count" type="integer" default="5">
+  Number of results to return (1-10)
+</ParamField>
+
+### Response
+
+Returns formatted search results with titles, URLs, and snippets.
+
+<ResponseField name="results" type="string">
+  Formatted search results:
+  ```
+  Results for: {query}
+  1. {title}
+     {url}
+     {description}
+  2. {title}
+     {url}
+     {description}
+  ...
+  ```
+</ResponseField>
+
+### Usage Example
+
+```json
+{
+  "query": "Weaver AI orchestration",
+  "count": 5
+}
+```
+
+**Example Output:**
+```
+Results for: Weaver AI orchestration
+1. Weaver - Ultra-Efficient AI Agent Orchestration
+   https://github.com/operatoronline/weaver
+   High-performance AI agent framework with tool support...
+
+2. Getting Started with Weaver
+   https://docs.weaver.ai/quickstart
+   Learn how to build AI agents with Weaver...
+```
+
+### Search Providers
+
+**Brave Search** (recommended):
+- Requires API key configuration
+- Higher quality results with structured data
+- Rate limits apply based on plan
+
+**DuckDuckGo** (fallback):
+- No API key required
+- HTML scraping-based extraction
+- May have less consistent formatting
+
+### Provider Selection
+
+Priority: Brave Search > DuckDuckGo
+
+```go
+// Brave enabled with API key
+NewWebSearchTool(WebSearchToolOptions{
+  BraveEnabled: true,
+  BraveAPIKey: "your-api-key",
+  BraveMaxResults: 5,
+})
+
+// DuckDuckGo fallback (no key needed)
+NewWebSearchTool(WebSearchToolOptions{
+  DuckDuckGoEnabled: true,
+  DuckDuckGoMaxResults: 5,
+})
+```
+
+### Error Conditions
+
+- `query is required` - Missing query parameter
+- `search failed: {error}` - Network error or provider failure
+- Returns `nil` tool if no provider is enabled or configured
+
+---
+
+## web_fetch
+
+Fetch a URL and extract readable content (HTML to text conversion).
+
+### Input Parameters
+
+<ParamField path="url" type="string" required>
+  URL to fetch. Must be `http://` or `https://`
+</ParamField>
+
+<ParamField path="maxChars" type="integer" default="50000">
+  Maximum characters to extract (minimum: 100)
+</ParamField>
+
+### Response
+
+Returns extracted content with metadata.
+
+<ResponseField name="url" type="string">
+  The fetched URL
+</ResponseField>
+
+<ResponseField name="status" type="integer">
+  HTTP status code (e.g., 200, 404)
+</ResponseField>
+
+<ResponseField name="extractor" type="string">
+  Content extraction method used:
+  - `text` - HTML converted to plain text
+  - `json` - JSON formatted response
+  - `raw` - Raw content returned as-is
+</ResponseField>
+
+<ResponseField name="truncated" type="boolean">
+  Whether content was truncated to maxChars limit
+</ResponseField>
+
+<ResponseField name="length" type="integer">
+  Length of returned content in characters
+</ResponseField>
+
+<ResponseField name="text" type="string">
+  Extracted content
+</ResponseField>
+
+### Usage Examples
+
+**Fetch HTML page:**
+```json
+{
+  "url": "https://example.com/article"
+}
+```
+
+**Fetch JSON API:**
+```json
+{
+  "url": "https://api.example.com/data"
+}
+```
+
+**Limit content length:**
+```json
+{
+  "url": "https://example.com/long-article",
+  "maxChars": 5000
+}
+```
+
+### Content Extraction
+
+**HTML Extraction (`text`):**
+1. Remove `<script>` and `<style>` tags and contents
+2. Strip all HTML tags
+3. Normalize whitespace (multiple spaces → single space)
+4. Remove empty lines
+5. Return clean text content
+
+**Example:**
+```html
+<!-- Input HTML -->
+<html>
+  <head><style>body{color:red;}</style></head>
+  <body>
+    <script>alert('test');</script>
+    <h1>Title</h1>
+    <p>Content here</p>
+  </body>
+</html>
+
+<!-- Extracted Text -->
+Title
+Content here
+```
+
+**JSON Extraction:**
+- Parses JSON response
+- Pretty-prints with 2-space indentation
+- Returns formatted JSON string
+
+**Raw Extraction:**
+- Returns content as-is for non-HTML, non-JSON types
+
+### LLM vs User Output
+
+**ForLLM (summary):**
+```
+Fetched {N} bytes from {url} (extractor: text, truncated: false)
+```
+
+**ForUser (full content):**
+```json
+{
+  "url": "https://example.com",
+  "status": 200,
+  "extractor": "text",
+  "truncated": false,
+  "length": 1523,
+  "text": "Page content..."
+}
+```
+
+### Error Conditions
+
+**Validation errors:**
+- `url is required` - Missing URL parameter
+- `invalid URL` - Malformed URL syntax
+- `only http/https URLs are allowed` - Unsupported scheme (e.g., ftp://)
+- `missing domain in URL` - URL has no hostname
+
+**Network errors:**
+- `failed to create request` - Request setup failed
+- `request failed` - Network timeout or connection error
+- `stopped after 5 redirects` - Too many redirects
+- `failed to read response` - Response body read error
+
+### HTTP Client Configuration
+
+- **Timeout:** 60 seconds
+- **Max redirects:** 5
+- **Idle connections:** 10
+- **TLS handshake timeout:** 15 seconds
+- **User-Agent:** Chrome 120 desktop browser
+
+---
+
+## Security Considerations
+
+### URL Validation
+
+- Only `http://` and `https://` schemes allowed
+- Must have valid hostname/domain
+- URL parsing validates syntax before request
+
+### Content Safety
+
+- No JavaScript execution (HTML extraction strips `<script>` tags)
+- Maximum content limits prevent memory exhaustion
+- Timeout protection prevents hanging requests
+- Redirect limits prevent infinite loops
+
+### Privacy
+
+- Uses standard browser User-Agent for compatibility
+- No cookies or session persistence
+- Each request is independent

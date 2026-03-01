@@ -1,0 +1,362 @@
+---
+title: Agent Loop
+description: Understanding Weaver's core agent processing engine and iteration lifecycle
+---
+
+## Overview
+
+The **AgentLoop** is Weaver's core processing engine. It handles the complete lifecycle of agent interactions: receiving messages, building context, calling LLMs, executing tools, and managing conversation memory.
+
+## Agent Structure
+
+From `pkg/agent/loop.go:33-49`:
+
+```go
+type AgentLoop struct {
+    bus            *bus.MessageBus      // Message routing
+    provider       providers.LLMProvider // LLM client
+    workspace      string               // Isolated directory
+    model          string               // Default model
+    contextWindow  int                  // Max context size
+    maxIterations  int                  // Tool loop limit
+    sessions       *session.SessionManager
+    state          *state.Manager       // Atomic state
+    contextBuilder *ContextBuilder
+    tools          *tools.ToolRegistry
+    channelManager *channels.Manager
+    canvasTool     *tools.CanvasTool
+    subagents      *tools.SubagentManager
+}
+```
+
+<Note>
+  Each agent instance is lightweight (&lt;10MB) and can boot in under 1 second, making Weaver suitable for high-density deployments.
+</Note>
+
+## Processing Lifecycle
+
+The agent processes messages through a structured pipeline:
+
+### 1. Message Reception
+
+```go
+func (al *AgentLoop) Run(ctx context.Context) error {
+    for al.running.Load() {
+        msg, ok := al.bus.ConsumeInbound(ctx)
+        if !ok {
+            continue
+        }
+        
+        response, err := al.processMessage(ctx, msg)
+        // Send response via bus
+    }
+}
+```
+
+Messages are consumed from the message bus and routed through:
+- **System messages** → `processSystemMessage()` (subagent completions)
+- **Commands** → `handleCommand()` (e.g., `/switch model to ...`)
+- **User messages** → `runAgentLoop()` (standard processing)
+
+### 2. Context Building
+
+The agent constructs LLM context from multiple sources:
+
+<Steps>
+  <Step title="System Identity">
+    Base instructions from `workspace/AGENT.md`:
+    ```markdown
+    You are a helpful AI assistant. Be concise, accurate, and friendly.
+    ```
+  </Step>
+
+  <Step title="Session History">
+    Retrieved from persistent session storage:
+    - Previous user and assistant messages
+    - Tool calls and results
+    - Reasoning traces (for extended thinking models)
+  </Step>
+
+  <Step title="Memory Summary">
+    If conversation exceeds thresholds:
+    - Automatic summarization of older messages
+    - Preserved in session metadata
+    - Injected as system context
+  </Step>
+
+  <Step title="Channel Context">
+    Special behavior for certain channels:
+    - **Forge Studio**: Bypasses tools for pure generation
+    - **Telegram/Discord**: Includes voice transcription support
+    - **Internal channels**: Silent logging without user responses
+  </Step>
+</Steps>
+
+### 3. LLM Iteration Loop
+
+The core processing happens in `runLLMIteration()` with intelligent tool handling:
+
+```go
+func (al *AgentLoop) runLLMIteration(ctx context.Context, 
+    messages []providers.Message, opts processOptions) (*providers.LLMResponse, int, error) {
+    
+    iteration := 0
+    for iteration < al.maxIterations {
+        iteration++
+        
+        // Call LLM with tools
+        response, err := al.provider.Chat(ctx, messages, toolDefs, model, options)
+        
+        // No tool calls? Done!
+        if len(response.ToolCalls) == 0 {
+            break
+        }
+        
+        // Execute each tool
+        for _, tc := range response.ToolCalls {
+            result := al.tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, ...)
+            messages = append(messages, resultMessage)
+        }
+    }
+    
+    return lastResponse, iteration, nil
+}
+```
+
+<Info>
+  The agent continues iterating until:
+  - The LLM returns a text response without tool calls
+  - Maximum iterations are reached (default: from config)
+  - An error occurs
+</Info>
+
+## Tool Execution
+
+Weaver provides a rich set of built-in tools:
+
+<Tabs>
+  <Tab title="File System">
+    - `read_file` - Read file contents
+    - `write_file` - Write/create files
+    - `edit_file` - Apply line-based edits
+    - `append_file` - Append to existing file
+    - `list_dir` - List directory contents
+
+    All file tools respect workspace boundaries when `restrict_to_workspace` is enabled.
+  </Tab>
+
+  <Tab title="Shell & Web">
+    - `exec` - Execute shell commands in workspace
+    - `web_search` - Search via Brave or DuckDuckGo
+    - `web_fetch` - Fetch and parse web content
+
+    ```go
+    registry.Register(tools.NewExecTool(workspace, restrict))
+    registry.Register(tools.NewWebSearchTool(options))
+    registry.Register(tools.NewWebFetchTool(50000))
+    ```
+  </Tab>
+
+  <Tab title="Hardware (Linux)">
+    - `i2c_read` / `i2c_write` - I2C bus communication
+    - `spi_transfer` - SPI device communication
+
+    These tools return errors on non-Linux platforms:
+    ```go
+    registry.Register(tools.NewI2CTool())
+    registry.Register(tools.NewSPITool())
+    ```
+  </Tab>
+
+  <Tab title="Agent Coordination">
+    - `spawn` - Launch async subagent with independent tool access
+    - `subagent` - Synchronous subagent execution
+    - `message` - Send direct message to user (channel-aware)
+
+    Subagents run with their own tool registry and can communicate results via the message bus.
+  </Tab>
+
+  <Tab title="Scheduling">
+    - `cron_add` - Schedule recurring tasks
+    - `cron_list` - View scheduled jobs
+    - `cron_remove` - Delete scheduled job
+    - `cron_enable` / `cron_disable` - Toggle jobs
+  </Tab>
+</Tabs>
+
+## Context Window Management
+
+Weaver implements intelligent context management to prevent overflow:
+
+### Token Estimation
+
+```go
+func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
+    totalChars := 0
+    for _, m := range messages {
+        totalChars += utf8.RuneCountInString(m.Content)
+    }
+    // 2.5 chars per token = totalChars * 2 / 5
+    return totalChars * 2 / 5
+}
+```
+
+### Automatic Summarization
+
+When history exceeds 75% of context window or 20 messages:
+
+<Steps>
+  <Step title="Background Trigger">
+    ```go
+    if len(newHistory) > 20 || tokenEstimate > threshold {
+        go func() {
+            al.bus.PublishOutbound("⚠️ Optimizing conversation history...")
+            al.summarizeSession(sessionKey)
+        }()
+    }
+    ```
+  </Step>
+
+  <Step title="Multi-Part Summarization">
+    For large histories, split into two parts:
+    1. Summarize first half
+    2. Summarize second half  
+    3. Merge summaries with LLM
+
+    ```go
+    s1, _ := al.summarizeBatch(ctx, part1, "")
+    s2, _ := al.summarizeBatch(ctx, part2, "")
+    finalSummary = al.mergeSummaries(s1, s2)
+    ```
+  </Step>
+
+  <Step title="History Truncation">
+    Keep only the last 4 messages after summarization:
+    ```go
+    al.sessions.SetSummary(sessionKey, finalSummary)
+    al.sessions.TruncateHistory(sessionKey, 4)
+    ```
+  </Step>
+</Steps>
+
+### Emergency Compression
+
+If LLM call fails with context/token errors:
+
+```go
+if strings.Contains(errMsg, "token") || strings.Contains(errMsg, "context") {
+    al.forceCompression(sessionKey)  // Drop oldest 50% of messages
+    messages = al.contextBuilder.BuildMessages(compressedHistory, ...)
+    // Retry LLM call
+}
+```
+
+## Special Processing Modes
+
+### Heartbeat Mode
+
+Periodic checks run without session history:
+
+```go
+func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, 
+    content, channel, chatID string) (string, error) {
+    return al.runAgentLoop(ctx, processOptions{
+        SessionKey:    "heartbeat",
+        NoHistory:     true,  // Independent processing
+        EnableSummary: false,
+        // ...
+    })
+}
+```
+
+<Info>
+  Heartbeats are used for scheduled checks and monitoring tasks that shouldn't accumulate context.
+</Info>
+
+### Forge Studio Mode
+
+Direct LLM access for high-volume code generation:
+
+```go
+if channel == "forge" || strings.HasPrefix(channel, "forge:") {
+    // Bypass agent loop - direct LLM call
+    return al.processForgeRequest(ctx, content, channel, chatID, responseMimeType)
+}
+```
+
+Forge mode:
+- Skips tool definitions
+- Uses higher max_tokens (32768 vs 8192)
+- Optimized for `gemini-2.5-pro` for code quality
+- No session history or memory
+
+## Subagent Orchestration
+
+Agents can spawn subagents for parallel or specialized tasks:
+
+```go
+// Spawn async subagent
+tool := tools.NewSpawnTool(subagentManager)
+result := tool.Execute(map[string]interface{}{
+    "task": "Analyze deployment logs",
+    "label": "log-analyzer",
+})
+
+// Or synchronous execution
+subagentTool := tools.NewSubagentTool(subagentManager)
+result := subagentTool.Execute(map[string]interface{}{
+    "task": "Calculate metrics",
+})
+```
+
+<Warning>
+  Subagents have their own tool registry but **cannot spawn further subagents** (no recursive spawning) to prevent runaway resource consumption.
+</Warning>
+
+Subagent results are delivered via the message bus:
+
+```go
+func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) {
+    // System messages contain subagent completion results
+    // Agent logs but doesn't forward (subagent used message tool)
+}
+```
+
+## Session Management
+
+Conversation state is persisted to disk:
+
+```go
+type SessionManager struct {
+    sessionsDir string
+    // In-memory cache with mutex protection
+}
+
+// Save message
+al.sessions.AddMessage(sessionKey, "user", content)
+al.sessions.AddFullMessage(sessionKey, assistantMsg)
+al.sessions.Save(sessionKey)  // Atomic write to disk
+```
+
+Session files are stored in `workspace/sessions/<session-key>.json` with structure:
+
+```json
+{
+  "key": "cli:default",
+  "messages": [...],
+  "summary": "Previous conversation context...",
+  "created": 1704067200000,
+  "updated": 1704070800000
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workspace" icon="folder" href="/concepts/workspace">
+    Learn about workspace isolation and file management
+  </Card>
+  <Card title="Channels" icon="message" href="/concepts/channels">
+    Understand how agents receive messages from users
+  </Card>
+</CardGroup>

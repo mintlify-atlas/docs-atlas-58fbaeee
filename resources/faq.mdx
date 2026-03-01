@@ -1,0 +1,388 @@
+---
+title: Frequently Asked Questions
+description: Common questions and answers about Weaver AI agent orchestration
+---
+
+## General Questions
+
+<AccordionGroup>
+  <Accordion title="What is Weaver?">
+    Weaver is an ultra-efficient AI agent orchestration service designed for high-density, low-latency deployment. Built from the ground up in Go, it enables the deployment of isolated, task-specific agents within Docker containers at scale.
+
+    **Key Features:**
+    - **Fast**: &lt;1s boot time per agent
+    - **Lightweight**: &lt;10MB RAM footprint per agent
+    - **Isolated**: Workspace-based directory isolation with strict Docker boundaries
+    - **Universal**: Multi-channel gateway support (Telegram, Discord, Slack, etc.)
+    - **Efficient**: Optimized for high-density managed services
+  </Accordion>
+
+  <Accordion title="How is Weaver different from other AI agent frameworks?">
+    Weaver is specifically optimized for **efficiency and scale**:
+
+    - **10x-100x lighter** than heavyweight agent frameworks
+    - **Sub-second boot times** vs multi-second initialization
+    - **Native multi-channel support** with unified tool protocol
+    - **Built in Go** for performance and resource efficiency
+    - **Workspace isolation** for secure multi-tenant deployments
+
+    See our efficiency comparison diagrams in the [main documentation](/).
+  </Accordion>
+
+  <Accordion title="What AI models does Weaver support?">
+    Weaver supports multiple AI providers:
+
+    - **Gemini** (Google) - Recommended: `gemini-3-flash-preview`
+    - **OpenAI** (GPT-4, GPT-3.5-turbo, etc.)
+    - **Anthropic** (Claude models)
+    - **OpenRouter** (Multiple model access)
+    - **Groq** (Fast inference)
+    - **Zhipu** (Chinese language models)
+    - **vLLM** (Self-hosted models)
+
+    The default configuration is optimized for `gemini-3-flash` to balance speed and cost.
+  </Accordion>
+
+  <Accordion title="Is Weaver open source?">
+    Yes! Weaver is open source under the MIT License. You can:
+
+    - Use it freely in commercial projects
+    - Modify and customize it for your needs
+    - Contribute back to the community
+    - Deploy it on your own infrastructure
+
+    See our [GitHub repository](https://github.com/operatoronline/weaver) for the source code.
+  </Accordion>
+</AccordionGroup>
+
+## Getting Started
+
+<AccordionGroup>
+  <Accordion title="How do I install Weaver?">
+    Weaver can be deployed in multiple ways:
+
+    **Docker (Recommended):**
+    ```bash
+    docker run --rm \
+      -v $(pwd)/workspaces/task-1:/root/.weaver/workspace \
+      -e GEMINI_API_KEY=$GEMINI_API_KEY \
+      operatoronline/weaver agent -m "Your task here"
+    ```
+
+    **From Source:**
+    ```bash
+    git clone https://github.com/operatoronline/weaver.git
+    cd weaver
+    go build -o weaver ./cmd/weaver
+    ./weaver agent -m "Your task here"
+    ```
+
+    See the [Quickstart guide](/quickstart) for detailed instructions.
+  </Accordion>
+
+  <Accordion title="What are the system requirements?">
+    Weaver is designed to be lightweight:
+
+    **Minimum:**
+    - 512MB RAM per agent
+    - 100MB disk space
+    - Linux, macOS, or Windows (with Docker)
+    - Docker (for containerized deployments)
+
+    **Recommended:**
+    - 1GB RAM for gateway + multiple agents
+    - 1GB disk space
+    - Linux or macOS for best performance
+    - Go 1.21+ (for development)
+  </Accordion>
+
+  <Accordion title="How do I configure Weaver?">
+    Configuration is managed via `config/config.json`:
+
+    ```json
+    {
+      "agents": {
+        "defaults": {
+          "model": "gemini-3-flash-preview",
+          "workspace": "~/.weaver/workspace"
+        }
+      },
+      "providers": {
+        "gemini": {
+          "api_key": "your-api-key"
+        }
+      }
+    }
+    ```
+
+    See [Configuration](/essentials/configuration) for all available options.
+  </Accordion>
+
+  <Accordion title="Do I need Docker?">
+    Docker is **recommended but not required**:
+
+    - **With Docker**: Better isolation, easier deployment, production-ready
+    - **Without Docker**: Direct binary execution, simpler for development
+
+    For production deployments and multi-tenant scenarios, Docker provides essential isolation.
+  </Accordion>
+</AccordionGroup>
+
+## Architecture & Design
+
+<AccordionGroup>
+  <Accordion title="What is the Weaver architecture?">
+    Weaver uses a **gateway-agent architecture**:
+
+    - **Gateway**: Central dispatcher that routes messages from external channels to agents
+    - **Agents**: Isolated, task-specific workers that process requests
+    - **Workspaces**: Dedicated file system areas for each agent's context
+    - **Channels**: Communication adapters (Telegram, Discord, etc.)
+
+    Agents are spawned on-demand and isolated via Docker containers or directory boundaries.
+  </Accordion>
+
+  <Accordion title="How does workspace isolation work?">
+    Each agent gets its own workspace directory:
+
+    ```
+    ~/.weaver/workspace/
+    ├── agent-1/
+    │   ├── AGENTS.md    # Agent coordination notes
+    │   ├── NEST.md      # Canvas/UI state
+    │   ├── USER.md      # User context
+    │   ├── TOOLS.md     # Tool usage history
+    │   └── memory/      # Persistent memory
+    └── agent-2/
+        └── ...
+    ```
+
+    This ensures:
+    - **Security**: Agents can't access each other's data
+    - **Context**: Each agent maintains its own working memory
+    - **Persistence**: State survives across sessions
+  </Accordion>
+
+  <Accordion title="What is the Canvas tool?">
+    The Canvas tool provides **direct manipulation of the Nest UI**:
+
+    - Create and update nodes in the visual interface
+    - Organize agent outputs visually
+    - Link related information
+    - Provide rich, interactive feedback to users
+
+    It's part of the Operator Online ecosystem for enhanced agent-human collaboration.
+  </Accordion>
+
+  <Accordion title="How are channels implemented?">
+    Channels are **adapters** that connect external platforms to Weaver:
+
+    Each channel:
+    - Receives messages from its platform (Telegram, Discord, etc.)
+    - Normalizes them into a common format
+    - Routes them through the gateway
+    - Delivers responses back to the platform
+
+    Supported channels: Telegram, Discord, WhatsApp, Feishu, QQ, DingTalk, MaixCam
+  </Accordion>
+</AccordionGroup>
+
+## Development & Customization
+
+<AccordionGroup>
+  <Accordion title="How do I add a new tool?">
+    Tools are defined in the agent's tool registry:
+
+    1. Implement your tool function in Go
+    2. Register it with the tool system
+    3. Define its schema for the AI model
+    4. The agent can now use it automatically
+
+    See [Development Guide](/development) for detailed instructions.
+  </Accordion>
+
+  <Accordion title="Can I use custom AI models?">
+    Yes! You can use:
+
+    - **Self-hosted models** via vLLM
+    - **Custom endpoints** with compatible APIs
+    - **Local models** with appropriate adapters
+
+    Configure them in `config.json` under the `vllm` provider with your custom endpoint.
+  </Accordion>
+
+  <Accordion title="How do I contribute to Weaver?">
+    We welcome contributions!
+
+    1. **Fork** the repository
+    2. **Create** a feature branch
+    3. **Make** your changes (with tests)
+    4. **Format** code: `make fmt`
+    5. **Submit** a pull request
+
+    See our [Contributing Guide](/resources/contributing) for detailed instructions.
+  </Accordion>
+
+  <Accordion title="Is there a plugin system?">
+    Currently, Weaver uses:
+
+    - **Skills**: Reusable tool sets (in development)
+    - **Channel adapters**: Platform integrations
+    - **Tool registration**: Custom tool additions
+
+    A more formal plugin system is on the [roadmap](/resources/roadmap).
+  </Accordion>
+</AccordionGroup>
+
+## Migration & Integration
+
+<AccordionGroup>
+  <Accordion title="How do I migrate from OpenClaw?">
+    Weaver includes a built-in migration tool:
+
+    ```bash
+    weaver migrate --from ~/.openclaw --to ~/.weaver
+    ```
+
+    This will:
+    - Convert your OpenClaw configuration
+    - Migrate workspace files and memory
+    - Preserve agent context
+    - Backup existing Weaver data
+
+    See the [OpenClaw Migration Guide](/resources/migration/openclaw) for details.
+  </Accordion>
+
+  <Accordion title="Can Weaver integrate with existing systems?">
+    Yes! Weaver supports:
+
+    - **REST APIs**: Call external services from agents
+    - **Webhooks**: Receive events from external systems
+    - **Message queues**: Integration via channels
+    - **Database access**: Through custom tools
+
+    The gateway architecture makes it easy to add new integration points.
+  </Accordion>
+
+  <Accordion title="Does Weaver support multi-tenancy?">
+    Yes! Weaver is designed for high-density deployments:
+
+    - **Workspace isolation** per user/tenant
+    - **Resource limits** via Docker
+    - **Access control** via channel allow lists
+    - **Shared gateway** with isolated agents
+
+    This is how [weaver.onl](https://weaver.onl) provides managed services.
+  </Accordion>
+</AccordionGroup>
+
+## Performance & Scaling
+
+<AccordionGroup>
+  <Accordion title="How many agents can I run simultaneously?">
+    With Weaver's efficiency:
+
+    - **8GB RAM**: ~80 concurrent agents (100MB each)
+    - **16GB RAM**: ~160 concurrent agents
+    - **32GB RAM**: ~320 concurrent agents
+
+    Actual numbers depend on workload and tooling complexity.
+  </Accordion>
+
+  <Accordion title="What is the typical response latency?">
+    Weaver is optimized for low latency:
+
+    - **Agent boot**: &lt;1 second
+    - **Gateway routing**: &lt;10ms
+    - **Tool execution**: Varies by tool
+    - **AI inference**: Depends on provider (gemini-flash is fastest)
+
+    Total typical latency: 2-5 seconds including AI inference.
+  </Accordion>
+
+  <Accordion title="How do I optimize resource usage?">
+    Best practices:
+
+    - Use **gemini-3-flash** for cost/speed balance
+    - Enable **workspace cleanup** for inactive agents
+    - Set **max_tool_iterations** limits
+    - Use **Docker resource limits** in production
+    - Monitor with **built-in metrics** (coming soon)
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Agent won't start - what should I check?">
+    Common issues:
+
+    1. **API keys**: Verify they're set correctly in `config.json`
+    2. **Permissions**: Check workspace directory permissions
+    3. **Docker**: Ensure Docker daemon is running (if using containers)
+    4. **Ports**: Make sure gateway port (default 8080) isn't in use
+    5. **Logs**: Check `~/.weaver/logs/` for error details
+  </Accordion>
+
+  <Accordion title="How do I debug agent behavior?">
+    Debugging tools:
+
+    - **Logs**: Check agent logs in the workspace
+    - **Dry run**: Use `--dry-run` flag to simulate without execution
+    - **Verbose mode**: Enable with `-v` or `--verbose`
+    - **Tool history**: Review `TOOLS.md` in the workspace
+    - **Memory inspection**: Check `memory/` directory contents
+  </Accordion>
+
+  <Accordion title="Where can I get help?">
+    Support channels:
+
+    - **GitHub Issues**: Bug reports and feature requests
+    - **Developer Discord**: For active contributors (after first merged PR)
+    - **Email**: support@operator.onl for general inquiries
+    - **Documentation**: Check guides and API references
+  </Accordion>
+</AccordionGroup>
+
+## Commercial & Licensing
+
+<AccordionGroup>
+  <Accordion title="Can I use Weaver commercially?">
+    Yes! Weaver is licensed under MIT, which allows:
+
+    - Commercial use
+    - Modification
+    - Distribution
+    - Private use
+
+    No attribution required, but appreciated!
+  </Accordion>
+
+  <Accordion title="Is there a managed service?">
+    Yes! [weaver.onl](https://weaver.onl) provides managed Weaver hosting:
+
+    - No infrastructure management
+    - Automatic scaling
+    - Pre-configured channels
+    - Professional support
+
+    Or self-host for free using the open source version.
+  </Accordion>
+
+  <Accordion title="What is Operator Online?">
+    Operator Online is the organization behind Weaver:
+
+    - Maintains the open source project
+    - Provides managed services
+    - Builds the AI ecosystem (AIEOS, Nest, etc.)
+    - Supports the community
+
+    Learn more at [operator.onl](https://operator.onl).
+  </Accordion>
+</AccordionGroup>
+
+---
+
+<Card title="Still have questions?" icon="question" href="https://github.com/operatoronline/weaver/issues">
+  Open an issue on GitHub or email us at support@operator.onl
+</Card>

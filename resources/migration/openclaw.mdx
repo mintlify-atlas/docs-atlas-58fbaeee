@@ -1,0 +1,513 @@
+---
+title: Migrating from OpenClaw
+description: Complete guide to migrating your OpenClaw setup to Weaver with automated tools
+---
+
+## Overview
+
+Weaver includes a built-in migration tool that automatically converts your OpenClaw configuration and workspace to Weaver's format. The migration is safe, non-destructive, and can be run in dry-run mode first.
+
+## Prerequisites
+
+- Existing OpenClaw installation at `~/.openclaw` (or custom location)
+- Weaver installed and ready
+- Backup of your OpenClaw data (recommended)
+
+## Quick Migration
+
+The simplest migration command:
+
+```bash
+weaver migrate
+```
+
+This will:
+- Detect your OpenClaw installation automatically
+- Convert configuration from OpenClaw to Weaver format
+- Migrate workspace files and agent memory
+- Backup any conflicting Weaver files
+- Show you a summary of all actions
+
+## Migration Options
+
+### Dry Run (Recommended First Step)
+
+See what will be migrated without making changes:
+
+```bash
+weaver migrate --dry-run
+```
+
+This displays:
+- Files to be copied
+- Configuration conversions
+- Potential conflicts
+- Warnings about unsupported features
+
+### Custom Paths
+
+If your OpenClaw or Weaver installation is in a non-standard location:
+
+```bash
+weaver migrate --from ~/my-openclaw --to ~/my-weaver
+```
+
+Or use environment variables:
+
+```bash
+export OPENCLAW_HOME=~/my-openclaw
+export WEAVER_HOME=~/my-weaver
+weaver migrate
+```
+
+### Selective Migration
+
+**Config only:**
+```bash
+weaver migrate --config-only
+```
+
+**Workspace only:**
+```bash
+weaver migrate --workspace-only
+```
+
+**Refresh workspace (overwrite existing):**
+```bash
+weaver migrate --refresh
+```
+
+### Force Mode
+
+Skip confirmation prompt and overwrite without backing up:
+
+```bash
+weaver migrate --force
+```
+
+<Warning>
+  Use `--force` with caution! It will overwrite existing Weaver files without creating backups.
+</Warning>
+
+## What Gets Migrated
+
+### Configuration
+
+The migration tool converts your OpenClaw config to Weaver format:
+
+#### Supported Providers
+
+- ✅ Anthropic (Claude models)
+- ✅ OpenAI (GPT models)
+- ✅ OpenRouter
+- ✅ Groq
+- ✅ Zhipu
+- ✅ vLLM (self-hosted)
+- ✅ Gemini (Google)
+
+Unsupported providers will be skipped with a warning.
+
+#### Supported Channels
+
+- ✅ Telegram
+- ✅ Discord
+- ✅ WhatsApp
+- ✅ Feishu
+- ✅ QQ
+- ✅ DingTalk
+- ✅ MaixCam
+
+Unsupported channels will be skipped with a warning.
+
+#### Configuration Mapping
+
+OpenClaw (camelCase) → Weaver (snake_case):
+
+```json
+// OpenClaw config
+{
+  "agents": {
+    "defaults": {
+      "model": "gpt-4",
+      "maxTokens": 2000,
+      "temperature": 0.7
+    }
+  }
+}
+
+// Converts to Weaver format
+{
+  "agents": {
+    "defaults": {
+      "model": "gpt-4",
+      "max_tokens": 2000,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+#### Path Rewriting
+
+Workspace paths are automatically updated:
+
+```
+~/.openclaw/workspace → ~/.weaver/workspace
+```
+
+### Workspace Files
+
+These files are migrated from each agent's workspace:
+
+- **AGENTS.md**: Agent coordination notes
+- **NEST.md**: Canvas/UI state
+- **USER.md**: User context and preferences
+- **TOOLS.md**: Tool usage history
+- **HEARTBEAT.md**: Agent health status
+
+### Workspace Directories
+
+- **memory/**: Persistent agent memory and context
+- **skills/**: Custom skills and tool definitions
+
+All subdirectories and their contents are copied recursively.
+
+## Migration Process
+
+Here's what happens during migration:
+
+### 1. Discovery
+
+The tool locates your OpenClaw installation:
+
+```
+Checking:
+  - $OPENCLAW_HOME
+  - --from flag
+  - ~/.openclaw (default)
+```
+
+### 2. Planning
+
+A migration plan is created:
+
+```
+Planned actions:
+  [config]  ~/.openclaw/config.json -> ~/.weaver/config.json
+  [copy]    AGENTS.md
+  [copy]    NEST.md
+  [backup]  USER.md (exists, will backup and overwrite)
+  [mkdir]   memory
+  [copy]    memory/conversation_1.json
+  ...
+
+15 files to copy, 1 config to convert, 1 backup needed, 3 skipped
+```
+
+### 3. Confirmation
+
+You'll be asked to confirm (unless using `--force`):
+
+```
+Proceed with migration? (y/n):
+```
+
+### 4. Execution
+
+The migration runs:
+
+```
+Migrating from OpenClaw to Weaver
+  Source:      /home/user/.openclaw
+  Destination: /home/user/.weaver
+
+  ✓ Converted config: ~/.weaver/config.json
+  ✓ Copied AGENTS.md
+  ✓ Backed up USER.md -> USER.md.bak
+  ✓ Copied USER.md
+  ✓ Copied NEST.md
+  ...
+
+Migration complete! 15 files copied, 1 config converted, 1 backup created.
+```
+
+## Configuration Merging
+
+If you already have a Weaver config, the migration intelligently merges:
+
+- **Existing Weaver settings** are preserved
+- **New OpenClaw settings** are added only if not already configured
+- **No data loss**: Your current Weaver config takes precedence
+
+Example:
+
+```json
+// Existing Weaver config
+{
+  "providers": {
+    "gemini": { "api_key": "weaver-key" },
+    "openai": { "api_key": "" }
+  }
+}
+
+// OpenClaw config
+{
+  "providers": {
+    "gemini": { "api_key": "openclaw-key" },
+    "openai": { "api_key": "openclaw-openai-key" },
+    "anthropic": { "api_key": "claude-key" }
+  }
+}
+
+// Merged result
+{
+  "providers": {
+    "gemini": { "api_key": "weaver-key" },  // Kept Weaver's
+    "openai": { "api_key": "openclaw-openai-key" },  // Added from OpenClaw
+    "anthropic": { "api_key": "claude-key" }  // Added from OpenClaw
+  }
+}
+```
+
+## Migration Code Reference
+
+### Core Types
+
+The migration system uses these key types:
+
+```go
+type Options struct {
+    DryRun        bool   // Preview without executing
+    ConfigOnly    bool   // Only migrate configuration
+    WorkspaceOnly bool   // Only migrate workspace files
+    Force         bool   // Skip confirmations and backups
+    Refresh       bool   // Overwrite existing workspace files
+    OpenClawHome  string // Custom OpenClaw path
+    WeaverHome    string // Custom Weaver path
+}
+
+type Action struct {
+    Type        ActionType // Copy, Skip, Backup, ConvertConfig, etc.
+    Source      string     // Source file path
+    Destination string     // Destination file path
+    Description string     // Human-readable description
+}
+
+type Result struct {
+    FilesCopied    int
+    FilesSkipped   int
+    BackupsCreated int
+    ConfigMigrated bool
+    DirsCreated    int
+    Warnings       []string
+    Errors         []error
+}
+```
+
+### Running Programmatically
+
+You can also use the migration package in your own Go code:
+
+```go
+import "github.com/operatoronline/weaver/pkg/migrate"
+
+opts := migrate.Options{
+    DryRun:       false,
+    OpenClawHome: "/path/to/openclaw",
+    WeaverHome:   "/path/to/weaver",
+}
+
+result, err := migrate.Run(opts)
+if err != nil {
+    log.Fatal(err)
+}
+
+migrate.PrintSummary(result)
+```
+
+## Common Scenarios
+
+### First Time Setup
+
+Migrating from OpenClaw to a fresh Weaver installation:
+
+```bash
+# Preview what will happen
+weaver migrate --dry-run
+
+# Execute the migration
+weaver migrate
+```
+
+### Existing Weaver Installation
+
+Adding OpenClaw config to existing Weaver:
+
+```bash
+# Migrate only config (preserves existing workspace)
+weaver migrate --config-only
+```
+
+### Update Workspace Only
+
+Refresh workspace files from OpenClaw:
+
+```bash
+# Copy workspace, overwriting existing files
+weaver migrate --workspace-only --refresh
+```
+
+### Multiple OpenClaw Instances
+
+Migrate from a specific OpenClaw instance:
+
+```bash
+weaver migrate --from ~/.openclaw-prod --to ~/.weaver-prod
+weaver migrate --from ~/.openclaw-dev --to ~/.weaver-dev
+```
+
+## Troubleshooting
+
+### OpenClaw Not Found
+
+```
+Error: OpenClaw installation not found at ~/.openclaw
+```
+
+**Solution**: Specify the correct path:
+```bash
+weaver migrate --from /path/to/openclaw
+```
+
+### Permission Errors
+
+```
+Error: permission denied writing to ~/.weaver/config.json
+```
+
+**Solution**: Check directory permissions:
+```bash
+chmod -R u+w ~/.weaver
+```
+
+### Config Parse Errors
+
+```
+Error: parsing OpenClaw config: invalid JSON
+```
+
+**Solution**: Validate your OpenClaw config:
+```bash
+jq . ~/.openclaw/config.json
+```
+
+### Missing Files
+
+```
+Warning: OpenClaw workspace directory not found, skipping workspace migration
+```
+
+**Solution**: This is normal if OpenClaw was never used with a workspace. Use `--config-only` to skip workspace migration:
+```bash
+weaver migrate --config-only
+```
+
+## Post-Migration Steps
+
+### 1. Verify Configuration
+
+Check that your config was migrated correctly:
+
+```bash
+cat ~/.weaver/config.json
+```
+
+Verify:
+- API keys are present
+- Model settings are correct
+- Workspace paths are updated
+
+### 2. Test Agent Spawn
+
+Spawn a test agent to ensure everything works:
+
+```bash
+weaver agent -m "Hello from Weaver!"
+```
+
+### 3. Test Channels
+
+If you use channels (Telegram, Discord, etc.), verify they connect:
+
+```bash
+weaver gateway
+```
+
+Check logs for successful channel connections.
+
+### 4. Inspect Workspace
+
+Verify workspace files were migrated:
+
+```bash
+ls -la ~/.weaver/workspace/
+```
+
+You should see your agent directories and files.
+
+### 5. Update Integrations
+
+If you have scripts or integrations pointing to OpenClaw:
+
+```bash
+# Update paths
+sed -i 's/\.openclaw/.weaver/g' your-script.sh
+
+# Update config references
+sed -i 's/OPENCLAW_HOME/WEAVER_HOME/g' your-script.sh
+```
+
+## Key Differences
+
+Be aware of these differences between OpenClaw and Weaver:
+
+### Configuration Format
+
+- **OpenClaw**: Often uses camelCase keys
+- **Weaver**: Uses snake_case keys consistently
+
+### Workspace Structure
+
+Both use similar structures, but Weaver adds:
+- Better isolation guarantees
+- Docker integration
+- Enhanced memory management
+
+### Performance
+
+Weaver is significantly more efficient:
+- &lt;1s boot time (vs 3-5s in OpenClaw)
+- &lt;10MB RAM per agent (vs 50-100MB in OpenClaw)
+- Better multi-agent scaling
+
+## Rollback
+
+If you need to revert to OpenClaw:
+
+1. Your OpenClaw installation is unchanged (migration is read-only)
+2. Backups are created at `~/.weaver/*.bak`
+3. Simply stop using Weaver and restart OpenClaw
+
+## Getting Help
+
+If you encounter issues during migration:
+
+- **GitHub Issues**: [Report migration bugs](https://github.com/operatoronline/weaver/issues)
+- **Email**: support@operator.onl
+- **Community**: Join the Developer Discord (after your first merged PR)
+
+---
+
+<Card title="Migration Complete?" icon="rocket" href="/quickstart">
+  Start using Weaver with our Quickstart guide
+</Card>

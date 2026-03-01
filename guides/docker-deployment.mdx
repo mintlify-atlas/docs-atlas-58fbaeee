@@ -1,0 +1,660 @@
+---
+title: Docker Deployment
+description: Deploy Weaver AI agents in Docker containers for production environments with compose files and health checks
+---
+
+Weaver provides production-ready Docker images for deploying AI agents in containerized environments. This guide covers building images, using Docker Compose, and production best practices.
+
+## Dockerfile Overview
+
+Weaver uses a multi-stage build for minimal image size and security (source/Dockerfile):
+
+```dockerfile
+# ============================================================
+# Stage 1: Build the weaver binary
+# ============================================================
+FROM golang:1.26.0-alpine AS builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY . .
+RUN make build
+
+# ============================================================
+# Stage 2: Minimal runtime image
+# ============================================================
+FROM alpine:3.23
+
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:18790/health || exit 1
+
+# Copy binary
+COPY --from=builder /src/build/weaver /usr/local/bin/weaver
+
+# Create weaver home directory
+RUN /usr/local/bin/weaver onboard
+
+ENTRYPOINT ["weaver"]
+CMD ["gateway"]
+```
+
+### Key Features
+
+- **Multi-stage build**: Separates build dependencies from runtime
+- **Alpine base**: Minimal image size (~50MB)
+- **Health check**: Built-in endpoint monitoring
+- **Automatic onboarding**: Creates default config on first run
+- **Flexible entrypoint**: Supports both `agent` and `gateway` modes
+
+## Building the Image
+
+<Steps>
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/operatoronline/weaver.git
+    cd weaver
+    ```
+  </Step>
+
+  <Step title="Build Docker Image">
+    ```bash
+    docker build -t weaver:latest .
+    ```
+
+    This creates an image with:
+    - Compiled Weaver binary
+    - Default configuration structure
+    - Health check endpoint at port 18790
+  </Step>
+
+  <Step title="Verify Build">
+    ```bash
+    docker images weaver
+    ```
+
+    Expected output:
+    ```text
+    REPOSITORY   TAG       IMAGE ID       CREATED         SIZE
+    weaver       latest    abc123def456   2 minutes ago   52MB
+    ```
+  </Step>
+</Steps>
+
+## Docker Compose Setup
+
+Weaver includes a production-ready compose file (source/docker-compose.yml) with two deployment profiles:
+
+### Profile 1: One-Shot Agent
+
+For running single queries without persistent state:
+
+```yaml
+services:
+  # ─────────────────────────────────────────────
+  # Weaver Agent (one-shot query)
+  #   docker compose run --rm weaver-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  weaver-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: weaver-agent
+    profiles:
+      - agent
+    volumes:
+      - ./config/config.json:/root/.weaver/config.json:ro
+      - weaver-workspace:/root/.weaver/workspace
+    entrypoint: ["weaver", "agent"]
+    stdin_open: true
+    tty: true
+```
+
+### Profile 2: Long-Running Gateway
+
+For persistent bot service with auto-restart:
+
+```yaml
+services:
+  # ─────────────────────────────────────────────
+  # Weaver Gateway (Long-running Bot)
+  #   docker compose up weaver-gateway
+  # ─────────────────────────────────────────────
+  weaver-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: weaver-gateway
+    restart: unless-stopped
+    profiles:
+      - gateway
+    volumes:
+      # Configuration file
+      - ./config/config.json:/root/.weaver/config.json:ro
+      # Persistent workspace (sessions, memory, logs)
+      - weaver-workspace:/root/.weaver/workspace
+    command: ["gateway"]
+
+volumes:
+  weaver-workspace:
+```
+
+## Deployment Modes
+
+### One-Shot Agent Mode
+
+Run a single query and exit:
+
+<Steps>
+  <Step title="Prepare Configuration">
+    Create `config/config.json` with your API keys:
+
+    ```json
+    {
+      "agents": {
+        "defaults": {
+          "model": "claude-3-5-sonnet-20241022",
+          "max_tokens": 8192
+        }
+      },
+      "providers": {
+        "anthropic": {
+          "api_key": "${ANTHROPIC_API_KEY}"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Run One-Shot Query">
+    ```bash
+    docker compose --profile agent run --rm weaver-agent -m "What is the capital of France?"
+    ```
+
+    Output:
+    ```text
+    The capital of France is Paris.
+    ```
+
+    Container automatically stops after response.
+  </Step>
+
+  <Step title="Interactive Session">
+    For multi-turn conversations:
+
+    ```bash
+    docker compose --profile agent run --rm weaver-agent
+    ```
+
+    Then interact via terminal.
+  </Step>
+</Steps>
+
+### Gateway Mode (Production)
+
+Run persistent bot service:
+
+<Steps>
+  <Step title="Configure Channels">
+    Update `config/config.json` with channel credentials:
+
+    ```json
+    {
+      "channels": {
+        "telegram": {
+          "enabled": true,
+          "token": "${TELEGRAM_BOT_TOKEN}",
+          "allow_from": ["${TELEGRAM_USER_ID}"]
+        },
+        "discord": {
+          "enabled": true,
+          "token": "${DISCORD_BOT_TOKEN}"
+        }
+      },
+      "gateway": {
+        "host": "0.0.0.0",
+        "port": 18790
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Start Gateway Service">
+    ```bash
+    docker compose --profile gateway up -d
+    ```
+
+    This:
+    - Starts gateway in background
+    - Auto-restarts on failure
+    - Connects to all enabled channels
+    - Exposes health check on port 18790
+  </Step>
+
+  <Step title="Verify Status">
+    Check container health:
+
+    ```bash
+    docker compose --profile gateway ps
+    ```
+
+    Expected output:
+    ```text
+    NAME            IMAGE     STATUS                    PORTS
+    weaver-gateway  weaver    Up 30 seconds (healthy)   18790/tcp
+    ```
+  </Step>
+
+  <Step title="View Logs">
+    ```bash
+    docker compose --profile gateway logs -f
+    ```
+  </Step>
+</Steps>
+
+## Volume Management
+
+Weaver uses Docker volumes for persistent data:
+
+### Workspace Volume
+
+From docker-compose.yml:15 and :36:
+
+```yaml
+volumes:
+  - weaver-workspace:/root/.weaver/workspace
+```
+
+Stores:
+- Agent session state
+- Conversation history
+- Tool execution results
+- User files created by agents
+
+### Configuration Mount
+
+From docker-compose.yml:14 and :34:
+
+```yaml
+volumes:
+  - ./config/config.json:/root/.weaver/config.json:ro
+```
+
+Mounted read-only (`:ro`) for security. Update host file and restart container to apply changes.
+
+### Inspecting Volume Data
+
+<CodeGroup>
+```bash List Volume Contents
+docker run --rm -v weaver-workspace:/workspace alpine ls -la /workspace
+```
+
+```bash Access Volume Shell
+docker run --rm -it -v weaver-workspace:/workspace alpine sh
+```
+
+```bash Backup Volume
+docker run --rm -v weaver-workspace:/workspace -v $(pwd):/backup alpine \
+  tar czf /backup/weaver-backup.tar.gz -C /workspace .
+```
+
+```bash Restore Volume
+docker run --rm -v weaver-workspace:/workspace -v $(pwd):/backup alpine \
+  tar xzf /backup/weaver-backup.tar.gz -C /workspace
+```
+</CodeGroup>
+
+## Health Checks
+
+The Dockerfile includes a health check (Dockerfile:26):
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:18790/health || exit 1
+```
+
+### Health Check Parameters
+
+- **Interval**: Check every 30 seconds
+- **Timeout**: Consider unhealthy if check takes >3 seconds
+- **Start period**: Grace period of 5 seconds after container start
+- **Retries**: Mark unhealthy after 3 consecutive failures
+
+### Testing Health Endpoint
+
+```bash
+curl http://localhost:18790/health
+```
+
+Expected response:
+```json
+{"status": "ok"}
+```
+
+## Production Configuration
+
+### Using Environment Variables
+
+Secure secrets with environment variables:
+
+<Steps>
+  <Step title="Create .env File">
+    ```bash .env
+    # LLM Providers
+    ANTHROPIC_API_KEY=sk-ant-xxx
+    OPENAI_API_KEY=sk-xxx
+    GEMINI_API_KEY=xxx
+
+    # Chat Channels
+    TELEGRAM_BOT_TOKEN=123456:ABC-DEF
+    TELEGRAM_USER_ID=123456789
+    DISCORD_BOT_TOKEN=xxx
+
+    # Tools
+    BRAVE_SEARCH_API_KEY=BSA...
+
+    # Timezone
+    TZ=Asia/Tokyo
+    ```
+  </Step>
+
+  <Step title="Update docker-compose.yml">
+    ```yaml
+    weaver-gateway:
+      build:
+        context: .
+        dockerfile: Dockerfile
+      container_name: weaver-gateway
+      restart: unless-stopped
+      env_file:
+        - .env
+      environment:
+        - WEAVER_CHANNELS_TELEGRAM_ENABLED=true
+        - WEAVER_CHANNELS_DISCORD_ENABLED=true
+      volumes:
+        - ./config/config.json:/root/.weaver/config.json:ro
+        - weaver-workspace:/root/.weaver/workspace
+      command: ["gateway"]
+    ```
+  </Step>
+
+  <Step title="Reference in Config">
+    ```json config/config.json
+    {
+      "providers": {
+        "anthropic": {
+          "api_key": "${ANTHROPIC_API_KEY}"
+        }
+      },
+      "channels": {
+        "telegram": {
+          "enabled": true,
+          "token": "${TELEGRAM_BOT_TOKEN}",
+          "allow_from": ["${TELEGRAM_USER_ID}"]
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+### Reverse Proxy Setup
+
+For webhook-based channels (LINE, Feishu), use nginx:
+
+```nginx nginx.conf
+upstream weaver {
+    server localhost:18790;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name weaver.yourdomain.com;
+
+    ssl_certificate /etc/ssl/certs/weaver.crt;
+    ssl_certificate_key /etc/ssl/private/weaver.key;
+
+    location /webhook/ {
+        proxy_pass http://weaver;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://weaver;
+        access_log off;
+    }
+}
+```
+
+Update docker-compose.yml to expose port:
+
+```yaml
+weaver-gateway:
+  ports:
+    - "18790:18790"
+```
+
+## Multi-Service Deployment
+
+Deploy with additional services:
+
+```yaml docker-compose.production.yml
+services:
+  weaver-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: weaver-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config/config.json:/root/.weaver/config.json:ro
+      - weaver-workspace:/root/.weaver/workspace
+    command: ["gateway"]
+    depends_on:
+      - redis
+    networks:
+      - weaver-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: weaver-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - weaver-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: weaver-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - weaver-net
+
+volumes:
+  weaver-workspace:
+  redis-data:
+  prometheus-data:
+
+networks:
+  weaver-net:
+    driver: bridge
+```
+
+Start entire stack:
+
+```bash
+docker compose -f docker-compose.production.yml up -d
+```
+
+## Monitoring and Logging
+
+### Container Logs
+
+<CodeGroup>
+```bash Follow Logs
+docker compose --profile gateway logs -f weaver-gateway
+```
+
+```bash Last 100 Lines
+docker compose --profile gateway logs --tail=100 weaver-gateway
+```
+
+```bash Logs Since Timestamp
+docker compose --profile gateway logs --since="2024-03-01T10:00:00" weaver-gateway
+```
+
+```bash Export Logs
+docker compose --profile gateway logs --no-color > weaver.log
+```
+</CodeGroup>
+
+### Resource Usage
+
+```bash
+docker stats weaver-gateway
+```
+
+Output:
+```text
+CONTAINER ID   NAME            CPU %   MEM USAGE / LIMIT   MEM %
+abc123def456   weaver-gateway  2.5%    128MB / 2GB         6.4%
+```
+
+## Updating Weaver
+
+<Steps>
+  <Step title="Pull Latest Code">
+    ```bash
+    git pull origin main
+    ```
+  </Step>
+
+  <Step title="Rebuild Image">
+    ```bash
+    docker compose --profile gateway build
+    ```
+  </Step>
+
+  <Step title="Restart Service">
+    ```bash
+    docker compose --profile gateway up -d
+    ```
+
+    Docker automatically:
+    - Stops old container
+    - Starts new container
+    - Preserves volume data
+    - Maintains zero downtime with health checks
+  </Step>
+
+  <Step title="Verify Update">
+    ```bash
+    docker compose --profile gateway exec weaver-gateway weaver version
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Container Exits Immediately">
+    Check logs for startup errors:
+
+    ```bash
+    docker compose --profile gateway logs weaver-gateway
+    ```
+
+    Common issues:
+    - Missing or invalid config.json
+    - Invalid API keys
+    - Port 18790 already in use
+  </Accordion>
+
+  <Accordion title="Health Check Fails">
+    Verify health endpoint:
+
+    ```bash
+    docker compose --profile gateway exec weaver-gateway wget -O- http://localhost:18790/health
+    ```
+
+    If failing:
+    - Check gateway configuration
+    - Ensure port 18790 is not blocked
+    - Review container logs for errors
+  </Accordion>
+
+  <Accordion title="Configuration Not Applied">
+    - Ensure config.json has valid JSON syntax
+    - Verify volume mount path is correct
+    - Restart container after config changes
+    - Check environment variable substitution
+  </Accordion>
+
+  <Accordion title="Permission Denied Errors">
+    Fix workspace permissions:
+
+    ```bash
+    docker run --rm -v weaver-workspace:/workspace alpine chown -R 1000:1000 /workspace
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Security">
+    - Never commit API keys to version control
+    - Use environment variables for secrets
+    - Mount config as read-only (`:ro`)
+    - Restrict `allow_from` to trusted users
+    - Keep base image updated (`alpine:3.23`)
+  </Accordion>
+
+  <Accordion title="Reliability">
+    - Use `restart: unless-stopped` for production
+    - Configure health checks
+    - Monitor container resource usage
+    - Set up log rotation
+    - Backup workspace volume regularly
+  </Accordion>
+
+  <Accordion title="Performance">
+    - Use Docker BuildKit for faster builds
+    - Cache go mod dependencies (Dockerfile:11-12)
+    - Limit container memory if needed
+    - Use multi-stage builds to reduce image size
+  </Accordion>
+
+  <Accordion title="Maintenance">
+    - Tag images with version numbers
+    - Document configuration changes
+    - Test updates in staging first
+    - Keep compose files in version control
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Configure [Multi-Channel Setup](/guides/multi-channel-setup) for production bot deployments
+- Learn [OAuth Authentication](/guides/oauth-authentication) for secure provider access
+- Review [Configuration](/guides/configuration) for advanced settings

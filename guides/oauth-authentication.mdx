@@ -1,0 +1,608 @@
+---
+title: OAuth Authentication
+description: Implement OAuth 2.0 authentication flows in Weaver for secure LLM provider access with PKCE
+---
+
+Weaver supports OAuth 2.0 authentication with PKCE (Proof Key for Code Exchange) for secure access to LLM providers that require OAuth flows. This guide covers the implementation details and usage of Weaver's OAuth system.
+
+## Overview
+
+Weaver's OAuth implementation (pkg/auth/oauth.go) provides:
+
+- **Browser-based flow**: Opens browser for user authentication
+- **Device code flow**: For headless/remote environments
+- **PKCE support**: Enhanced security for public clients
+- **Token refresh**: Automatic access token renewal
+- **Multi-provider**: Support for OpenAI, GitHub Copilot, and custom OAuth providers
+
+## OAuth Architecture
+
+Weaver implements the OAuth 2.0 Authorization Code flow with PKCE:
+
+```text
+┌─────────┐                                 ┌──────────┐
+│ Weaver  │                                 │ Provider │
+│ Client  │                                 │  (OAuth) │
+└────┬────┘                                 └────┬─────┘
+     │                                           │
+     │ 1. Generate PKCE codes                    │
+     │    (code_verifier, code_challenge)        │
+     │                                           │
+     │ 2. Open browser with authorization URL    │
+     │───────────────────────────────────────────>│
+     │                                           │
+     │                      3. User authenticates│
+     │                         and authorizes    │
+     │                                           │
+     │ 4. Redirect to callback with auth code    │
+     │<───────────────────────────────────────────│
+     │                                           │
+     │ 5. Exchange code for tokens               │
+     │    (with code_verifier)                   │
+     │───────────────────────────────────────────>│
+     │                                           │
+     │ 6. Return access_token + refresh_token    │
+     │<───────────────────────────────────────────│
+     │                                           │
+```
+
+## Authentication Methods
+
+Weaver provides three OAuth authentication flows:
+
+### 1. Browser-Based Authentication
+
+Best for interactive environments with a web browser.
+
+<Steps>
+  <Step title="Generate PKCE Codes">
+    From pkg/auth/pkce.go:14:
+
+    ```go
+    func GeneratePKCE() (PKCECodes, error) {
+        buf := make([]byte, 64)
+        if _, err := rand.Read(buf); err != nil {
+            return PKCECodes{}, err
+        }
+
+        verifier := base64.RawURLEncoding.EncodeToString(buf)
+        hash := sha256.Sum256([]byte(verifier))
+        challenge := base64.RawURLEncoding.EncodeToString(hash[:])
+
+        return PKCECodes{
+            CodeVerifier:  verifier,
+            CodeChallenge: challenge,
+        }, nil
+    }
+    ```
+
+    This creates:
+    - `code_verifier`: Random 64-byte string
+    - `code_challenge`: SHA256 hash of verifier
+  </Step>
+
+  <Step title="Build Authorization URL">
+    From pkg/auth/oauth.go:301:
+
+    ```go
+    func buildAuthorizeURL(cfg OAuthProviderConfig, pkce PKCECodes, state, redirectURI string) string {
+        params := url.Values{
+            "response_type":              {"code"},
+            "client_id":                  {cfg.ClientID},
+            "redirect_uri":               {redirectURI},
+            "scope":                      {cfg.Scopes},
+            "code_challenge":             {pkce.CodeChallenge},
+            "code_challenge_method":      {"S256"},
+            "id_token_add_organizations": {"true"},
+            "codex_cli_simplified_flow":  {"true"},
+            "state":                      {state},
+        }
+        return cfg.Issuer + "/oauth/authorize?" + params.Encode()
+    }
+    ```
+  </Step>
+
+  <Step title="Start Local Callback Server">
+    From pkg/auth/oauth.go:64:
+
+    ```go
+    mux := http.NewServeMux()
+    mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
+        if r.URL.Query().Get("state") != state {
+            resultCh <- callbackResult{err: fmt.Errorf("state mismatch")}
+            http.Error(w, "State mismatch", http.StatusBadRequest)
+            return
+        }
+
+        code := r.URL.Query().Get("code")
+        if code == "" {
+            errMsg := r.URL.Query().Get("error")
+            resultCh <- callbackResult{err: fmt.Errorf("no code received: %s", errMsg)}
+            http.Error(w, "No authorization code received", http.StatusBadRequest)
+            return
+        }
+
+        w.Header().Set("Content-Type", "text/html")
+        fmt.Fprint(w, "<html><body><h2>Authentication successful!</h2><p>You can close this window.</p></body></html>")
+        resultCh <- callbackResult{code: code}
+    })
+
+    listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port))
+    ```
+
+    Weaver starts a local HTTP server on port 1455 (or configured port) to receive the OAuth callback.
+  </Step>
+
+  <Step title="Exchange Code for Tokens">
+    From pkg/auth/oauth.go:322:
+
+    ```go
+    func exchangeCodeForTokens(cfg OAuthProviderConfig, code, codeVerifier, redirectURI string) (*AuthCredential, error) {
+        data := url.Values{
+            "grant_type":    {"authorization_code"},
+            "code":          {code},
+            "redirect_uri":  {redirectURI},
+            "client_id":     {cfg.ClientID},
+            "code_verifier": {codeVerifier},
+        }
+
+        resp, err := http.PostForm(cfg.Issuer+"/oauth/token", data)
+        if err != nil {
+            return nil, fmt.Errorf("exchanging code for tokens: %w", err)
+        }
+        defer resp.Body.Close()
+
+        body, _ := io.ReadAll(resp.Body)
+        if resp.StatusCode != http.StatusOK {
+            return nil, fmt.Errorf("token exchange failed: %s", string(body))
+        }
+
+        return parseTokenResponse(body, "openai")
+    }
+    ```
+  </Step>
+</Steps>
+
+### 2. Device Code Flow
+
+For headless environments (servers, SSH sessions).
+
+<Steps>
+  <Step title="Request Device Code">
+    From pkg/auth/oauth.go:174:
+
+    ```go
+    func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
+        reqBody, _ := json.Marshal(map[string]string{
+            "client_id": cfg.ClientID,
+        })
+
+        resp, err := http.Post(
+            cfg.Issuer+"/api/accounts/deviceauth/usercode",
+            "application/json",
+            strings.NewReader(string(reqBody)),
+        )
+        if err != nil {
+            return nil, fmt.Errorf("requesting device code: %w", err)
+        }
+        defer resp.Body.Close()
+
+        body, _ := io.ReadAll(resp.Body)
+        deviceResp, err := parseDeviceCodeResponse(body)
+    }
+    ```
+  </Step>
+
+  <Step title="Display User Code">
+    From pkg/auth/oauth.go:203:
+
+    ```go
+    fmt.Printf("\nTo authenticate, open this URL in your browser:\n\n  %s/codex/device\n\nThen enter this code: %s\n\nWaiting for authentication...\n",
+        cfg.Issuer, deviceResp.UserCode)
+    ```
+
+    Example output:
+    ```text
+    To authenticate, open this URL in your browser:
+
+      https://auth.openai.com/codex/device
+
+    Then enter this code: ABCD-1234
+
+    Waiting for authentication...
+    ```
+  </Step>
+
+  <Step title="Poll for Token">
+    From pkg/auth/oauth.go:210:
+
+    ```go
+    deadline := time.After(15 * time.Minute)
+    ticker := time.NewTicker(time.Duration(deviceResp.Interval) * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-deadline:
+            return nil, fmt.Errorf("device code authentication timed out after 15 minutes")
+        case <-ticker.C:
+            cred, err := pollDeviceCode(cfg, deviceResp.DeviceAuthID, deviceResp.UserCode)
+            if err != nil {
+                continue
+            }
+            if cred != nil {
+                return cred, nil
+            }
+        }
+    }
+    ```
+
+    Polls every 5 seconds (or server-specified interval) until:
+    - User completes authentication
+    - 15-minute timeout expires
+  </Step>
+</Steps>
+
+### 3. Token Paste (Fallback)
+
+For environments where OAuth is not available.
+
+From pkg/auth/token.go:10:
+
+```go
+func LoginPasteToken(provider string, r io.Reader) (*AuthCredential, error) {
+    fmt.Printf("Paste your API key or session token from %s:\n", providerDisplayName(provider))
+    fmt.Print("> ")
+
+    scanner := bufio.NewScanner(r)
+    if !scanner.Scan() {
+        if err := scanner.Err(); err != nil {
+            return nil, fmt.Errorf("reading token: %w", err)
+        }
+        return nil, fmt.Errorf("no input received")
+    }
+
+    token := strings.TrimSpace(scanner.Text())
+    if token == "" {
+        return nil, fmt.Errorf("token cannot be empty")
+    }
+
+    return &AuthCredential{
+        AccessToken: token,
+        Provider:    provider,
+        AuthMethod:  "token",
+    }, nil
+}
+```
+
+## Token Management
+
+### Credential Storage
+
+From pkg/auth/oauth.go:365:
+
+```go
+type AuthCredential struct {
+    AccessToken  string
+    RefreshToken string
+    ExpiresAt    time.Time
+    Provider     string
+    AuthMethod   string
+    AccountID    string
+}
+```
+
+### Token Refresh
+
+From pkg/auth/oauth.go:261:
+
+```go
+func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCredential, error) {
+    if cred.RefreshToken == "" {
+        return nil, fmt.Errorf("no refresh token available")
+    }
+
+    data := url.Values{
+        "client_id":     {cfg.ClientID},
+        "grant_type":    {"refresh_token"},
+        "refresh_token": {cred.RefreshToken},
+        "scope":         {"openid profile email"},
+    }
+
+    resp, err := http.PostForm(cfg.Issuer+"/oauth/token", data)
+    if err != nil {
+        return nil, fmt.Errorf("refreshing token: %w", err)
+    }
+    defer resp.Body.Close()
+
+    body, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("token refresh failed: %s", string(body))
+    }
+
+    refreshed, err := parseTokenResponse(body, cred.Provider)
+    if err != nil {
+        return nil, err
+    }
+    if refreshed.RefreshToken == "" {
+        refreshed.RefreshToken = cred.RefreshToken
+    }
+    return refreshed, nil
+}
+```
+
+### JWT Parsing
+
+Extract account information from ID tokens (pkg/auth/oauth.go:385):
+
+```go
+func extractAccountID(token string) string {
+    claims, err := parseJWTClaims(token)
+    if err != nil {
+        return ""
+    }
+
+    if accountID, ok := claims["chatgpt_account_id"].(string); ok && accountID != "" {
+        return accountID
+    }
+
+    if accountID, ok := claims["https://api.openai.com/auth.chatgpt_account_id"].(string); ok && accountID != "" {
+        return accountID
+    }
+
+    if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]interface{}); ok {
+        if accountID, ok := authClaim["chatgpt_account_id"].(string); ok && accountID != "" {
+            return accountID
+        }
+    }
+
+    return ""
+}
+```
+
+## Provider Configuration
+
+### OpenAI OAuth
+
+From pkg/auth/oauth.go:29:
+
+```go
+func OpenAIOAuthConfig() OAuthProviderConfig {
+    return OAuthProviderConfig{
+        Issuer:     "https://auth.openai.com",
+        ClientID:   "app_EMoamEEZ73f0CkXaXp7hrann",
+        Scopes:     "openid profile email offline_access",
+        Originator: "codex_cli_rs",
+        Port:       1455,
+    }
+}
+```
+
+### GitHub Copilot OAuth
+
+Configure in config.json:
+
+```json
+{
+  "providers": {
+    "github_copilot": {
+      "auth_method": "oauth",
+      "connect_mode": "grpc"
+    }
+  }
+}
+```
+
+### Custom Provider
+
+Define your own OAuth provider:
+
+```go
+type OAuthProviderConfig struct {
+    Issuer     string  // OAuth server base URL
+    ClientID   string  // OAuth client ID
+    Scopes     string  // Space-separated scopes
+    Originator string  // Optional originator identifier
+    Port       int     // Local callback server port
+}
+
+customProvider := OAuthProviderConfig{
+    Issuer:     "https://oauth.example.com",
+    ClientID:   "your-client-id",
+    Scopes:     "openid profile api.access",
+    Originator: "weaver",
+    Port:       1455,
+}
+```
+
+## Usage Examples
+
+### Command-Line Authentication
+
+<CodeGroup>
+```bash Browser Flow
+weaver auth login --provider openai
+# Opens browser automatically
+# Redirects to http://localhost:1455/auth/callback
+```
+
+```bash Device Code Flow
+weaver auth login --provider openai --device-code
+# Displays URL and user code
+# Polls for completion
+```
+
+```bash Token Paste
+weaver auth login --provider anthropic --paste-token
+# Prompts for API key
+```
+</CodeGroup>
+
+### Programmatic Usage
+
+```go
+import (
+    "context"
+    "github.com/operatoronline/weaver/pkg/auth"
+)
+
+// Browser-based OAuth
+cfg := auth.OpenAIOAuthConfig()
+cred, err := auth.LoginBrowser(cfg)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Access Token: %s\n", cred.AccessToken)
+fmt.Printf("Expires At: %s\n", cred.ExpiresAt)
+fmt.Printf("Account ID: %s\n", cred.AccountID)
+
+// Token refresh
+if time.Now().After(cred.ExpiresAt) {
+    refreshed, err := auth.RefreshAccessToken(cred, cfg)
+    if err != nil {
+        log.Fatal(err)
+    }
+    cred = refreshed
+}
+```
+
+## Security Considerations
+
+<AccordionGroup>
+  <Accordion title="PKCE Protection">
+    Weaver uses PKCE (RFC 7636) to prevent authorization code interception:
+
+    - `code_verifier`: Kept secret on client
+    - `code_challenge`: Sent to authorization server
+    - `code_challenge_method`: SHA256 hashing
+
+    This prevents attackers from using stolen authorization codes.
+  </Accordion>
+
+  <Accordion title="State Parameter">
+    From pkg/auth/oauth.go:39:
+
+    ```go
+    func generateState() (string, error) {
+        buf := make([]byte, 32)
+        if _, err := rand.Read(buf); err != nil {
+            return "", err
+        }
+        return hex.EncodeToString(buf), nil
+    }
+    ```
+
+    64-character random state prevents CSRF attacks.
+  </Accordion>
+
+  <Accordion title="Local Callback Server">
+    - Binds to `127.0.0.1` only (not `0.0.0.0`)
+    - Shuts down immediately after receiving callback
+    - 5-minute timeout to prevent hanging
+    - HTML response confirms success
+  </Accordion>
+
+  <Accordion title="Token Storage">
+    - Credentials stored in `~/.weaver/auth/`
+    - File permissions: 0600 (owner read/write only)
+    - Refresh tokens enable long-term access
+    - Access tokens expire (typically 1 hour)
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Browser Doesn't Open">
+    Manually open the URL displayed in terminal:
+
+    ```text
+    Open this URL to authenticate:
+
+    https://auth.openai.com/oauth/authorize?client_id=...
+    ```
+
+    Or use device code flow:
+    ```bash
+    weaver auth login --provider openai --device-code
+    ```
+  </Accordion>
+
+  <Accordion title="State Mismatch Error">
+    Possible causes:
+    - Multiple authentication attempts
+    - Browser cached old redirect
+    - Network proxy interference
+
+    Solution: Clear browser cache and retry.
+  </Accordion>
+
+  <Accordion title="Port Already in Use">
+    If port 1455 is occupied:
+
+    ```go
+    cfg := auth.OAuthProviderConfig{
+        // ... other fields
+        Port: 1456, // Use different port
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Token Refresh Failed">
+    If refresh token is invalid or expired:
+
+    ```bash
+    weaver auth logout --provider openai
+    weaver auth login --provider openai
+    ```
+
+    Re-authenticate to obtain new tokens.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use OAuth Over API Keys">
+    OAuth provides:
+    - Shorter-lived access tokens
+    - Automatic token refresh
+    - Account-level access control
+    - Revocation capabilities
+  </Accordion>
+
+  <Accordion title="Secure Token Storage">
+    - Never commit credentials to version control
+    - Use file permissions 0600 for auth files
+    - Rotate credentials regularly
+    - Revoke tokens when no longer needed
+  </Accordion>
+
+  <Accordion title="Handle Token Expiration">
+    Always check `ExpiresAt` before API calls:
+
+    ```go
+    if time.Now().After(cred.ExpiresAt) {
+        cred, err = auth.RefreshAccessToken(cred, cfg)
+        if err != nil {
+            // Re-authenticate
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Device Code for Servers">
+    Use device code flow for:
+    - Headless servers
+    - SSH sessions
+    - Docker containers
+    - CI/CD pipelines
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Configure [OAuth providers](/guides/configuration) in config.json
+- Deploy with [Docker](/guides/docker-deployment) using OAuth credentials
+- Set up [Multi-Channel](/guides/multi-channel-setup) authentication

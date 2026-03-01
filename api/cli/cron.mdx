@@ -1,0 +1,357 @@
+---
+title: weaver cron
+description: Manage scheduled tasks and automated agent workflows
+---
+
+The `cron` command manages scheduled tasks that execute agent prompts at specified intervals or cron expressions.
+
+## Usage
+
+```bash
+weaver cron <subcommand> [options]
+```
+
+## Subcommands
+
+### list
+
+Display all scheduled jobs, including disabled ones.
+
+```bash
+weaver cron list
+```
+
+Output:
+```
+Scheduled Jobs:
+----------------
+  Daily Summary (job-abc123)
+    Schedule: every 86400s
+    Status: enabled
+    Next run: 2026-03-02 09:00
+  
+  Hourly Check (job-def456)
+    Schedule: 0 * * * *
+    Status: disabled
+    Next run: scheduled
+```
+
+### add
+
+Create a new scheduled job.
+
+```bash
+weaver cron add [options]
+```
+
+<ParamField path="-n, --name" type="string" required>
+  Human-readable job name
+</ParamField>
+
+<ParamField path="-m, --message" type="string" required>
+  Message/prompt to send to the agent
+</ParamField>
+
+<ParamField path="-e, --every" type="integer">
+  Run every N seconds (interval-based scheduling)
+  
+  **Mutually exclusive with `--cron`**
+  
+  Examples:
+  - `300` - Every 5 minutes
+  - `3600` - Every hour
+  - `86400` - Every day
+</ParamField>
+
+<ParamField path="-c, --cron" type="string">
+  Cron expression (time-based scheduling)
+  
+  **Mutually exclusive with `--every`**
+  
+  Format: `minute hour day month weekday`
+  
+  Examples:
+  - `0 9 * * *` - Daily at 9:00 AM
+  - `*/15 * * * *` - Every 15 minutes
+  - `0 0 * * 0` - Weekly on Sunday at midnight
+</ParamField>
+
+<ParamField path="-d, --deliver" type="flag">
+  Deliver agent response to a channel
+  
+  Requires `--channel` and `--to` options.
+</ParamField>
+
+<ParamField path="--channel" type="string">
+  Channel to deliver response (telegram, discord, slack)
+  
+  Required when `--deliver` is set.
+</ParamField>
+
+<ParamField path="--to" type="string">
+  Recipient identifier (chat ID, user ID, channel name)
+  
+  Required when `--deliver` is set.
+  
+  Format varies by channel:
+  - **Telegram:** Chat ID (e.g., `123456789`)
+  - **Discord:** Channel ID (e.g., `987654321`)
+  - **Slack:** Channel name (e.g., `#general`)
+</ParamField>
+
+### remove
+
+Delete a scheduled job by ID.
+
+```bash
+weaver cron remove <job_id>
+```
+
+### enable
+
+Enable a disabled job.
+
+```bash
+weaver cron enable <job_id>
+```
+
+### disable
+
+Disable a job without deleting it.
+
+```bash
+weaver cron disable <job_id>
+```
+
+## Job Storage
+
+Jobs are stored at:
+- **Location:** `~/.weaver/workspace/cron/jobs.json`
+- **Format:** JSON
+- **Persistence:** Survives gateway restarts
+
+Example `jobs.json`:
+```json
+[
+  {
+    "id": "job-abc123",
+    "name": "Daily Summary",
+    "enabled": true,
+    "schedule": {
+      "kind": "every",
+      "every_ms": 86400000
+    },
+    "prompt": "Summarize today's activity",
+    "deliver": true,
+    "channel": "telegram",
+    "to": "123456789",
+    "state": {
+      "next_run_at_ms": 1709373600000
+    }
+  }
+]
+```
+
+## Execution Context
+
+Jobs execute with:
+- **Session:** Unique per job (maintains conversation history)
+- **Tools:** Full agent tool access
+- **Skills:** All loaded skills available
+- **Workspace:** Restricted to workspace if configured
+
+## Examples
+
+<CodeGroup>
+```bash Interval-based job
+$ weaver cron add \
+  --name "Hourly Backup" \
+  --message "Backup workspace to cloud" \
+  --every 3600
+
+✓ Added job 'Hourly Backup' (job-xyz789)
+```
+
+```bash Cron expression
+$ weaver cron add \
+  --name "Morning Briefing" \
+  --message "Summarize overnight activity" \
+  --cron "0 9 * * *"
+
+✓ Added job 'Morning Briefing' (job-abc123)
+```
+
+```bash With delivery
+$ weaver cron add \
+  --name "Daily Report" \
+  --message "Generate daily metrics report" \
+  --cron "0 18 * * *" \
+  --deliver \
+  --channel telegram \
+  --to 123456789
+
+✓ Added job 'Daily Report' (job-def456)
+```
+
+```bash List jobs
+$ weaver cron list
+
+Scheduled Jobs:
+----------------
+  Hourly Backup (job-xyz789)
+    Schedule: every 3600s
+    Status: enabled
+    Next run: 2026-03-01 15:00
+  
+  Morning Briefing (job-abc123)
+    Schedule: 0 9 * * *
+    Status: enabled
+    Next run: 2026-03-02 09:00
+  
+  Daily Report (job-def456)
+    Schedule: 0 18 * * *
+    Status: enabled
+    Next run: 2026-03-01 18:00
+```
+
+```bash Disable job
+$ weaver cron disable job-xyz789
+✓ Job 'Hourly Backup' disabled
+```
+
+```bash Enable job
+$ weaver cron enable job-xyz789
+✓ Job 'Hourly Backup' enabled
+```
+
+```bash Remove job
+$ weaver cron remove job-abc123
+✓ Removed job job-abc123
+```
+
+```bash No jobs
+$ weaver cron list
+
+No scheduled jobs.
+```
+</CodeGroup>
+
+## Cron Expression Reference
+
+| Field | Values | Special |
+|-------|--------|--------|
+| Minute | 0-59 | `*` `/` `,` `-` |
+| Hour | 0-23 | `*` `/` `,` `-` |
+| Day | 1-31 | `*` `/` `,` `-` `?` `L` `W` |
+| Month | 1-12 | `*` `/` `,` `-` |
+| Weekday | 0-6 (Sun-Sat) | `*` `/` `,` `-` `?` `L` `#` |
+
+**Common patterns:**
+- `0 * * * *` - Every hour on the hour
+- `*/15 * * * *` - Every 15 minutes
+- `0 0 * * *` - Daily at midnight
+- `0 9-17 * * 1-5` - Every hour, 9 AM-5 PM, weekdays
+- `0 0 1 * *` - First day of every month
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Success |
+| 1 | Invalid arguments |
+| 1 | Job not found |
+| 1 | Failed to add/update job |
+
+## Error Handling
+
+### Missing Required Field
+
+```bash
+Error: --name is required
+```
+
+### Missing Schedule
+
+```bash
+Error: Either --every or --cron must be specified
+```
+
+### Invalid Cron Expression
+
+```bash
+Error adding job: invalid cron expression '0 25 * * *'
+```
+
+### Missing Delivery Config
+
+```bash
+Error: --channel and --to required when --deliver is set
+```
+
+### Job Not Found
+
+```bash
+✗ Job job-xyz789 not found
+```
+
+## Runtime Behavior
+
+### Job Execution
+
+Jobs run in the gateway process:
+1. Gateway loads `jobs.json` on startup
+2. Scheduler calculates next run times
+3. At scheduled time, job executes:
+   - Agent processes prompt
+   - If `deliver: true`, sends response to channel
+   - Updates next run time
+
+### Missed Executions
+
+If gateway is down during scheduled time:
+- **Interval jobs:** Resume on next interval after startup
+- **Cron jobs:** Skip missed execution, wait for next
+
+### Delivery Failures
+
+If channel delivery fails:
+- Error logged
+- Job continues scheduling
+- Response not retried
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive names">
+    Names appear in logs and help identify jobs:
+    ```bash
+    --name "Weekly Database Backup"
+    ```
+  </Accordion>
+  
+  <Accordion title="Test prompts first">
+    Run prompt with `weaver agent` before scheduling:
+    ```bash
+    weaver agent -m "Generate daily metrics report"
+    # If output is good, add to cron
+    ```
+  </Accordion>
+  
+  <Accordion title="Use appropriate intervals">
+    Avoid too-frequent jobs that could rate-limit:
+    - Minimum recommended: 60 seconds
+    - For most tasks: 300+ seconds
+  </Accordion>
+  
+  <Accordion title="Monitor job logs">
+    Check gateway logs for execution results:
+    ```bash
+    journalctl -u weaver -f | grep cron
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Commands
+
+- [`weaver gateway`](/api/cli/gateway) - Starts cron service
+- [`weaver agent`](/api/cli/agent) - Test job prompts

@@ -1,0 +1,385 @@
+---
+title: weaver skills
+description: Install and manage agent skills and capabilities
+---
+
+The `skills` command manages agent skills - modular capabilities that extend what the agent can do.
+
+## Usage
+
+```bash
+weaver skills <subcommand> [options]
+```
+
+## Subcommands
+
+### list
+
+Display all installed skills from workspace, global, and builtin directories.
+
+```bash
+weaver skills list
+```
+
+Output:
+```
+Installed Skills:
+------------------
+  ✓ weather (workspace)
+    Get current weather and forecasts
+  
+  ✓ calculator (builtin)
+    Perform mathematical calculations
+  
+  ✓ news (global)
+    Fetch latest news articles
+```
+
+### install
+
+Install a skill from GitHub repository.
+
+```bash
+weaver skills install <repo>
+```
+
+<ParamField path="repo" type="string" required>
+  GitHub repository in format `owner/repo` or `domain/owner/repo`
+  
+  Examples:
+  - `operator.onl/weaver-skills/weather`
+  - `username/skill-name`
+</ParamField>
+
+Installs to: `~/.weaver/workspace/skills/<skill-name>/`
+
+### remove
+
+Uninstall a skill from workspace.
+
+```bash
+weaver skills remove <skill-name>
+```
+
+**Alias:** `uninstall`
+
+<ParamField path="skill-name" type="string" required>
+  Name of the skill to remove (directory name)
+</ParamField>
+
+### show
+
+Display detailed information about a skill.
+
+```bash
+weaver skills show <skill-name>
+```
+
+<ParamField path="skill-name" type="string" required>
+  Name of the skill to display
+</ParamField>
+
+Output:
+```
+📦 Skill: weather
+----------------------
+Provides current weather conditions and forecasts.
+
+Usage:
+  "What's the weather in Tokyo?"
+  "Will it rain tomorrow?"
+
+Requirements:
+  - OpenWeather API key in config
+```
+
+### search
+
+Search available skills from online registry.
+
+```bash
+weaver skills search
+```
+
+Output:
+```
+Searching for available skills...
+
+Available Skills (12):
+--------------------
+  📦 weather
+     Get weather forecasts and conditions
+     Repo: operator.onl/weaver-skills/weather
+     Author: Weaver Team
+     Tags: [weather, api, forecast]
+  
+  📦 stock
+     Stock market data and quotes
+     Repo: operator.onl/weaver-skills/stock
+     Author: Weaver Team
+     Tags: [finance, stocks, market]
+```
+
+### install-builtin
+
+Copy all builtin skills to workspace for customization.
+
+```bash
+weaver skills install-builtin
+```
+
+Copies from builtin directory to `~/.weaver/workspace/skills/`
+
+Builtin skills:
+- `weather` - Weather forecasts
+- `news` - News articles
+- `stock` - Stock quotes
+- `calculator` - Math calculations
+
+### list-builtin
+
+Show available builtin skills.
+
+```bash
+weaver skills list-builtin
+```
+
+Output:
+```
+Available Builtin Skills:
+-----------------------
+  ✓  weather
+     Weather forecasts and conditions
+  
+  ✓  calculator
+     Mathematical calculations
+```
+
+## Skill Structure
+
+A skill is a directory containing:
+
+```
+skill-name/
+├── SKILL.md          # Skill definition and instructions (required)
+├── README.md         # Documentation (optional)
+├── config.json       # Configuration schema (optional)
+└── resources/        # Additional files (optional)
+```
+
+**SKILL.md format:**
+```markdown
+---
+name: weather
+description: Get current weather and forecasts
+author: Weaver Team
+tags: [weather, api]
+---
+
+This skill provides weather information using OpenWeather API.
+
+Usage instructions for the agent...
+```
+
+## Skill Loading
+
+Skills are loaded from three locations in order:
+
+1. **Workspace:** `~/.weaver/workspace/skills/` (highest priority)
+2. **Global:** `~/.weaver/skills/`
+3. **Builtin:** `~/.weaver/weaver/skills/` (embedded with binary)
+
+If a skill exists in multiple locations, workspace version takes precedence.
+
+## Examples
+
+<CodeGroup>
+```bash Install from GitHub
+$ weaver skills install operator.onl/weaver-skills/weather
+
+Installing skill from operator.onl/weaver-skills/weather...
+✓ Skill 'weather' installed successfully!
+```
+
+```bash List installed
+$ weaver skills list
+
+Installed Skills:
+------------------
+  ✓ weather (workspace)
+    Get current weather and forecasts
+  
+  ✓ calculator (builtin)
+    Perform mathematical calculations
+  
+  ✓ news (workspace)
+    Fetch latest news articles
+  
+  ✓ stock (workspace)
+    Stock market data and quotes
+```
+
+```bash Show skill details
+$ weaver skills show weather
+
+📦 Skill: weather
+----------------------
+Provides current weather conditions and forecasts.
+
+Usage:
+  Ask about current weather: "What's the weather in London?"
+  Ask about forecasts: "Will it rain tomorrow in Tokyo?"
+
+Requirements:
+  - OpenWeather API key configured in config.json
+  - Internet connection
+
+Configuration:
+  Add to ~/.weaver/config.json:
+  {
+    "weather_api_key": "your-key-here"
+  }
+```
+
+```bash Remove skill
+$ weaver skills remove news
+
+Removing skill 'news'...
+✓ Skill 'news' removed successfully!
+```
+
+```bash Install builtin
+$ weaver skills install-builtin
+
+Copying builtin skills to workspace...
+✓ All builtin skills installed!
+Now you can use them in your workspace.
+```
+
+```bash Search online
+$ weaver skills search
+
+Searching for available skills...
+
+Available Skills (8):
+--------------------
+  📦 weather
+     Get weather forecasts and conditions
+     Repo: operator.onl/weaver-skills/weather
+     Author: Weaver Team
+     Tags: [weather, api, forecast]
+  
+  📦 translator
+     Translate text between languages
+     Repo: operator.onl/weaver-skills/translator
+     Author: Community
+     Tags: [translation, languages]
+```
+
+```bash No skills
+$ weaver skills list
+
+No skills installed.
+```
+</CodeGroup>
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Success |
+| 1 | Installation failed |
+| 1 | Skill not found |
+| 1 | Network error (install/search) |
+
+## Error Handling
+
+### Installation Errors
+
+```bash
+✗ Failed to install skill: repository not found
+```
+Verify repository path and access.
+
+```bash
+✗ Failed to install skill: no SKILL.md found
+```
+Repository must contain a valid `SKILL.md` file.
+
+### Removal Errors
+
+```bash
+✗ Failed to remove skill: skill not found in workspace
+```
+Cannot remove builtin or global skills, only workspace.
+
+### Search Errors
+
+```bash
+✗ Failed to fetch skills list: network timeout
+```
+Check internet connection.
+
+## Skill Development
+
+To create a custom skill:
+
+<Steps>
+  <Step title="Create directory">
+    ```bash
+    mkdir -p ~/.weaver/workspace/skills/my-skill
+    cd ~/.weaver/workspace/skills/my-skill
+    ```
+  </Step>
+  
+  <Step title="Create SKILL.md">
+    ```markdown
+    ---
+    name: my-skill
+    description: Does something useful
+    ---
+    
+    This skill helps the agent with X, Y, and Z.
+    
+    When the user asks about [topic], use this approach:
+    1. First, do A
+    2. Then, do B
+    3. Finally, respond with C
+    ```
+  </Step>
+  
+  <Step title="Test with agent">
+    ```bash
+    weaver agent -m "Use my-skill to do X"
+    ```
+  </Step>
+  
+  <Step title="Optional: Add resources">
+    ```bash
+    mkdir resources
+    # Add templates, scripts, etc.
+    ```
+  </Step>
+</Steps>
+
+## Skill Availability
+
+Skills may be unavailable if:
+- Missing required API keys in config
+- Syntax errors in SKILL.md
+- Missing dependencies
+
+Check availability:
+```bash
+$ weaver gateway
+
+📦 Agent Status:
+  • Skills: 4/6 available
+```
+
+Unavailable skills are loaded but marked inactive.
+
+## Related Commands
+
+- [`weaver agent`](/api/cli/agent) - Uses loaded skills
+- [`weaver gateway`](/api/cli/gateway) - Shows skill availability on startup

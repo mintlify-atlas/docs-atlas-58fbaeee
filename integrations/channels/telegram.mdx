@@ -1,0 +1,241 @@
+---
+title: Telegram Channel Integration
+description: Connect Weaver to Telegram using the Bot API for seamless AI agent communication
+---
+
+The Telegram channel enables Weaver to communicate through Telegram using the official Bot API. It supports long polling for message reception and includes features like typing indicators, markdown formatting, and media handling.
+
+## Prerequisites
+
+- A Telegram account
+- Access to [@BotFather](https://t.me/botfather) on Telegram
+
+## Creating a Telegram Bot
+
+1. **Start a chat with BotFather**
+   - Open Telegram and search for `@BotFather`
+   - Send `/start` to begin
+
+2. **Create a new bot**
+   ```
+   /newbot
+   ```
+   - Choose a name for your bot (e.g., "My Weaver Bot")
+   - Choose a username ending in `bot` (e.g., `my_weaver_bot`)
+
+3. **Save your bot token**
+   - BotFather will provide a token like `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
+   - Keep this token secure - it's your bot's authentication
+
+4. **Optional: Configure bot settings**
+   ```
+   /setdescription - Set bot description
+   /setabouttext - Set About text
+   /setuserpic - Set bot profile picture
+   /setcommands - Configure bot commands
+   ```
+
+## Configuration
+
+Add the Telegram channel to your `config.yaml`:
+
+```yaml
+channels:
+  telegram:
+    enabled: true
+    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    proxy: ""  # Optional: socks5://host:port or http://host:port
+    allow_from:
+      - "123456789"          # User ID
+      - "123456789|username"  # User ID with username
+```
+
+### Configuration Options
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | Enable Telegram channel |
+| `token` | string | Yes | Bot token from BotFather |
+| `proxy` | string | No | Proxy URL for API access |
+| `allow_from` | array | No | Allowed user IDs/usernames |
+
+## User ID Format
+
+Telegram identifies users by numeric IDs. The `allow_from` field accepts:
+
+- Numeric user ID: `"123456789"`
+- User ID with username: `"123456789|john_doe"`
+
+**Finding Your User ID:**
+1. Message your bot
+2. Check Weaver logs for entries like:
+   ```
+   Received message from sender_id: 123456789|username
+   ```
+
+## Supported Features
+
+### Message Types
+
+- **Text Messages** - Full support with markdown/HTML formatting
+- **Photos** - Automatically downloaded (highest resolution)
+- **Voice Messages** - Downloaded as `.ogg` and transcribed if Groq is enabled
+- **Audio Files** - Downloaded as `.mp3`
+- **Documents** - Downloaded with original filename
+- **Captions** - Extracted from media messages
+
+### Bot Commands
+
+Weaver's Telegram channel supports these commands:
+
+- `/start` - Initialize bot interaction
+- `/help` - Display help message
+- `/show` - Show agent information
+- `/list` - List available agents/features
+
+### Response Features
+
+- **Typing Indicator** - Shows "typing..." while agent processes
+- **Thinking Animation** - Displays "Thinking... 💭" placeholder
+- **Message Editing** - Replaces placeholder with actual response
+- **HTML Formatting** - Converts markdown to Telegram HTML
+
+## Message Formatting
+
+Weaver automatically converts markdown to Telegram's HTML format:
+
+| Markdown | Telegram HTML | Result |
+|----------|---------------|--------|
+| `**bold**` | `<b>bold</b>` | **bold** |
+| `_italic_` | `<i>italic</i>` | *italic* |
+| `~~strike~~` | `<s>strike</s>` | ~~strike~~ |
+| `` `code` `` | `<code>code</code>` | `code` |
+| ` ```code block``` ` | `<pre><code>code</code></pre>` | Code block |
+| `[link](url)` | `<a href="url">link</a>` | [link](#) |
+
+## Media Handling
+
+The Telegram channel automatically downloads media:
+
+1. **Photos**: Highest resolution version downloaded as `.jpg`
+2. **Voice**: Downloaded as `.ogg`, transcribed if enabled
+3. **Audio**: Downloaded as `.mp3`
+4. **Documents**: Downloaded with original filename
+5. **Temporary files**: Cleaned up after processing
+
+### Voice Transcription
+
+Enable voice transcription in `config.yaml`:
+
+```yaml
+voice:
+  enabled: true
+  groq_api_key: "your-groq-api-key"
+  model: "whisper-large-v3"
+
+channels:
+  telegram:
+    enabled: true
+    token: "your-bot-token"
+```
+
+Voice messages will be transcribed and sent to agents as:
+```
+[voice transcription: Hello, this is a test message]
+```
+
+## Proxy Configuration
+
+If you need to access Telegram API through a proxy:
+
+```yaml
+channels:
+  telegram:
+    enabled: true
+    token: "your-bot-token"
+    proxy: "socks5://127.0.0.1:1080"  # SOCKS5 proxy
+    # proxy: "http://proxy.example.com:8080"  # HTTP proxy
+```
+
+## Connection Mode
+
+Weaver uses **Long Polling** to receive messages:
+
+- Connection: Direct to Telegram API
+- Latency: Low (~1-2 seconds)
+- No webhook setup required
+- Works behind NAT/firewalls
+
+## Error Handling
+
+### Common Issues
+
+**Bot Token Invalid**
+```
+failed to create telegram bot: unauthorized
+```
+- Verify token with BotFather
+- Ensure no extra spaces in configuration
+
+**User Not Allowed**
+```
+Message rejected by allowlist user_id: 123456789
+```
+- Add user ID to `allow_from` list
+- Or remove `allow_from` to allow all users
+
+**HTML Parse Failed**
+```
+HTML parse failed, falling back to plain text
+```
+- Message sent as plain text (non-fatal)
+- Occurs with complex formatting
+
+## Security Considerations
+
+1. **Token Protection**: Never commit bot token to version control
+2. **Allowlist**: Use `allow_from` to restrict access
+3. **Rate Limiting**: Telegram enforces API rate limits
+4. **File Size**: Telegram limits downloads to 20MB for bots
+
+## Example Configuration
+
+```yaml
+channels:
+  telegram:
+    enabled: true
+    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    allow_from:
+      - "987654321|alice"
+      - "123456789|bob"
+
+voice:
+  enabled: true
+  groq_api_key: "gsk_..."
+  model: "whisper-large-v3"
+```
+
+## Logging
+
+Monitor Telegram channel activity:
+
+```bash
+# View Telegram-specific logs
+grep "telegram" weaver.log
+
+# Monitor real-time
+tail -f weaver.log | grep telegram
+```
+
+Log examples:
+```
+Starting Telegram bot (polling mode)...
+Telegram bot connected username=my_weaver_bot
+Received message sender_id=123456789|alice chat_id=123456789
+```
+
+## Next Steps
+
+- [Configure Agents](/core/agents) to respond on Telegram
+- [Set up Voice Transcription](/features/voice) for audio messages
+- [Enable Multimodal](/features/multimodal) for image understanding

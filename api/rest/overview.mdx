@@ -1,0 +1,66 @@
+---
+title: 'REST API Overview'
+description: 'Complete reference for Weaver REST API endpoints'
+---
+
+## Introduction
+
+The Weaver REST API provides HTTP endpoints for interacting with the AI agent orchestration service. All endpoints return JSON responses and support standard HTTP methods.
+
+## Base URL
+
+```
+http://localhost:8080
+```
+
+The default server configuration uses port 8080, but this can be customized during deployment.
+
+## Available Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Chat" icon="message" href="/api/rest/chat">
+    Send messages to AI agents and receive responses
+  </Card>
+  <Card title="Health" icon="heart-pulse" href="/api/rest/health">
+    Check service health and readiness status
+  </Card>
+</CardGroup>
+
+## Authentication
+
+Currently, the REST API does not require authentication for basic endpoints. Admin endpoints like `/admin/status`, `/admin/service`, and `/admin/logs` should be protected by network-level security or reverse proxy authentication.
+
+## Request Format
+
+All POST requests should include:
+
+```bash
+Content-Type: application/json
+```
+
+## Response Format
+
+All responses are returned in JSON format with appropriate HTTP status codes:
+
+- `200 OK` - Successful request
+- `400 Bad Request` - Invalid request body or parameters
+- `405 Method Not Allowed` - Incorrect HTTP method
+- `503 Service Unavailable` - Service not ready
+
+## Error Handling
+
+Errors are returned with appropriate HTTP status codes and JSON bodies:
+
+```json
+{
+  "error": "Error description"
+}
+```
+
+## Timeouts
+
+The server is configured with 5-minute (300 second) read and write timeouts to accommodate long-running AI generation tasks.
+
+## Rate Limiting
+
+Rate limiting is not currently implemented at the application level. Consider implementing rate limiting at the reverse proxy or infrastructure level for production deployments.

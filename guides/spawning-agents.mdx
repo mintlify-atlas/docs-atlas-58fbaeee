@@ -1,0 +1,404 @@
+---
+title: Spawning Agents
+description: Learn how to spawn subagents in Weaver for parallel task execution and complex workflows
+---
+
+Weaver provides powerful agent spawning capabilities that allow parent agents to delegate tasks to independent subagents. This enables parallel execution, task specialization, and complex multi-agent workflows.
+
+## Overview
+
+Weaver offers two types of agent spawning:
+
+- **Asynchronous Spawning** (`spawn` tool): Launches a background agent that reports back when complete
+- **Synchronous Spawning** (`subagent` tool): Executes a task and waits for the result
+
+Both approaches use the same underlying infrastructure (pkg/tools/subagent.go) but differ in their execution model.
+
+## Spawn Tool (Async)
+
+The `spawn` tool launches a subagent in the background, allowing the parent agent to continue working while the subagent completes its task.
+
+### When to Use Spawn
+
+Use async spawning for:
+- Long-running tasks that don't block the parent
+- Parallel execution of independent tasks
+- Background monitoring or data collection
+- Tasks where immediate results aren't needed
+
+### Example Usage
+
+<Steps>
+  <Step title="Basic Spawn">
+    The parent agent can spawn a subagent with a simple task:
+
+    ```json
+    {
+      "name": "spawn",
+      "arguments": {
+        "task": "Analyze the latest error logs and create a summary report",
+        "label": "log-analysis"
+      }
+    }
+    ```
+
+    The subagent will:
+    1. Start execution in the background
+    2. Access the same tools as the parent
+    3. Report results via the message bus when complete
+  </Step>
+
+  <Step title="Spawn Returns Immediately">
+    The spawn tool returns a result immediately:
+
+    ```text
+    Spawned subagent 'log-analysis' for task: Analyze the latest error logs...
+    ```
+
+    The parent agent can continue with other tasks while the subagent works.
+  </Step>
+
+  <Step title="Subagent Completion">
+    When the subagent finishes, it sends a message back to the parent:
+
+    ```text
+    Task 'log-analysis' completed.
+
+    Result:
+    Found 23 errors in the last 24 hours. Top errors:
+    1. Database connection timeout (12 occurrences)
+    2. API rate limit exceeded (8 occurrences)
+    3. Invalid JSON payload (3 occurrences)
+    ```
+  </Step>
+</Steps>
+
+### Spawn Implementation
+
+From pkg/tools/spawn.go:58:
+
+```go
+func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+    task, ok := args["task"].(string)
+    if !ok {
+        return ErrorResult("task is required")
+    }
+
+    label, _ := args["label"].(string)
+
+    // Pass callback to manager for async completion notification
+    result, err := t.manager.Spawn(ctx, task, label, t.originChannel, t.originChatID, t.callback)
+    if err != nil {
+        return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
+    }
+
+    // Return AsyncResult since the task runs in background
+    return AsyncResult(result)
+}
+```
+
+## Subagent Tool (Sync)
+
+The `subagent` tool executes a task synchronously and returns the full result to the parent agent.
+
+### When to Use Subagent
+
+Use synchronous subagents for:
+- Tasks where you need the result to continue
+- Delegation of specialized work
+- Breaking down complex tasks into manageable pieces
+- Tasks with dependencies on the result
+
+### Example Usage
+
+<Steps>
+  <Step title="Synchronous Execution">
+    The parent agent waits for the subagent to complete:
+
+    ```json
+    {
+      "name": "subagent",
+      "arguments": {
+        "task": "Research the top 3 JavaScript frameworks and compare their performance",
+        "label": "framework-research"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Subagent Executes with Tools">
+    The subagent has access to all tools and can:
+    - Execute web searches
+    - Read and write files
+    - Run shell commands
+    - Spawn its own subagents (nested spawning)
+
+    The subagent iterates up to `max_tool_iterations` times (default: 10).
+  </Step>
+
+  <Step title="Results Returned to Parent">
+    The parent receives both a user summary and detailed LLM result:
+
+    **For User:**
+    ```text
+    Top JavaScript frameworks:
+    1. React - 18.2.0, Virtual DOM, excellent performance
+    2. Vue - 3.3.0, Reactive system, lightweight
+    3. Svelte - 4.0.0, No virtual DOM, fastest...
+    ```
+
+    **For LLM:**
+    ```text
+    Subagent task completed:
+    Label: framework-research
+    Iterations: 7
+    Result: [Full detailed comparison with benchmarks, code examples, and recommendations]
+    ```
+  </Step>
+</Steps>
+
+### Subagent Implementation
+
+From pkg/tools/subagent.go:255:
+
+```go
+func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+    task, ok := args["task"].(string)
+    if !ok {
+        return ErrorResult("task is required").WithError(fmt.Errorf("task parameter is required"))
+    }
+
+    messages := []providers.Message{
+        {
+            Role:    "system",
+            Content: "You are a subagent. Complete the given task independently and provide a clear, concise result.",
+        },
+        {
+            Role:    "user",
+            Content: task,
+        },
+    }
+
+    loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
+        Provider:      sm.provider,
+        Model:         sm.defaultModel,
+        Tools:         tools,
+        MaxIterations: maxIter,
+        LLMOptions: map[string]any{
+            "max_tokens":  4096,
+            "temperature": 0.7,
+        },
+    }, messages, t.originChannel, t.originChatID)
+
+    if err != nil {
+        return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
+    }
+
+    return &ToolResult{
+        ForLLM:  fmt.Sprintf("Subagent task completed: %s", loopResult.Content),
+        ForUser: userContent,
+        Silent:  false,
+        IsError: false,
+    }
+}
+```
+
+## Subagent Manager
+
+The SubagentManager (pkg/tools/subagent.go:24) orchestrates all subagent execution:
+
+```go
+type SubagentManager struct {
+    tasks         map[string]*SubagentTask
+    mu            sync.RWMutex
+    provider      providers.LLMProvider
+    defaultModel  string
+    bus           *bus.MessageBus
+    workspace     string
+    tools         *ToolRegistry
+    maxIterations int
+    nextID        int
+}
+```
+
+### Key Features
+
+- **Task Tracking**: Each spawned agent gets a unique ID (`subagent-1`, `subagent-2`, etc.)
+- **Tool Access**: Subagents inherit the parent's tool registry
+- **Message Bus**: Results are published back via the message bus
+- **Context Cancellation**: Supports graceful cancellation via context
+
+## Tool Loop Execution
+
+Both spawn and subagent tools use the same tool loop (pkg/tools/toolloop.go):
+
+<Steps>
+  <Step title="System Prompt">
+    Subagent receives a specialized system prompt:
+
+    ```text
+    You are a subagent. Complete the given task independently and report the result.
+    You have access to tools - use them as needed to complete your task.
+    After completing the task, provide a clear summary of what was done.
+    ```
+  </Step>
+
+  <Step title="Tool Iteration Loop">
+    The subagent executes up to `maxIterations` times:
+
+    1. LLM generates response with optional tool calls
+    2. Tools are executed with results fed back to LLM
+    3. Loop continues until task is complete or max iterations reached
+    4. Final response is returned as the result
+  </Step>
+
+  <Step title="Result Handling">
+    From pkg/tools/subagent.go:91:
+
+    ```go
+    loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
+        Provider:      sm.provider,
+        Model:         sm.defaultModel,
+        Tools:         tools,
+        MaxIterations: maxIter,
+        LLMOptions: map[string]any{
+            "max_tokens":  4096,
+            "temperature": 0.7,
+        },
+    }, messages, task.OriginChannel, task.OriginChatID)
+    ```
+  </Step>
+</Steps>
+
+## Advanced Patterns
+
+### Parallel Task Execution
+
+Spawn multiple agents for parallel work:
+
+```json
+[
+  {
+    "name": "spawn",
+    "arguments": {
+      "task": "Scan /var/log for security issues",
+      "label": "security-scan"
+    }
+  },
+  {
+    "name": "spawn",
+    "arguments": {
+      "task": "Generate performance report for last 7 days",
+      "label": "perf-report"
+    }
+  },
+  {
+    "name": "spawn",
+    "arguments": {
+      "task": "Update documentation for new API endpoints",
+      "label": "docs-update"
+    }
+  }
+]
+```
+
+### Nested Subagents
+
+Subagents can spawn their own subagents for recursive task decomposition:
+
+```text
+Parent Agent
+├── Subagent 1: Research market trends
+│   ├── Subagent 1.1: Analyze competitor A
+│   └── Subagent 1.2: Analyze competitor B
+└── Subagent 2: Generate report
+```
+
+### Task Monitoring
+
+From pkg/tools/subagent.go:64:
+
+```go
+type SubagentTask struct {
+    ID            string
+    Task          string
+    Label         string
+    OriginChannel string
+    OriginChatID  string
+    Status        string  // "running", "completed", "failed", "cancelled"
+    Result        string
+    Created       int64
+}
+```
+
+You can track subagent status and retrieve results programmatically.
+
+## Configuration
+
+Configure subagent behavior in your agent defaults:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "max_tool_iterations": 20,
+      "workspace": "~/.weaver/workspace",
+      "restrict_to_workspace": true
+    }
+  }
+}
+```
+
+- `max_tool_iterations`: Maximum tool calls per subagent execution
+- `workspace`: Directory where subagents can read/write files
+- `restrict_to_workspace`: Sandbox subagents to workspace only
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Choose the Right Spawn Type">
+    - Use `spawn` for fire-and-forget background tasks
+    - Use `subagent` when you need the result to continue
+    - Consider task duration and dependencies
+  </Accordion>
+
+  <Accordion title="Provide Clear Task Descriptions">
+    Subagents work best with specific, actionable tasks:
+    
+    **Good:**
+    ```text
+    Analyze error.log from the last 24 hours and create a CSV report with columns: timestamp, error_type, count, severity
+    ```
+
+    **Bad:**
+    ```text
+    Look at logs
+    ```
+  </Accordion>
+
+  <Accordion title="Use Labels for Tracking">
+    Always provide a `label` to identify subagent tasks:
+
+    ```json
+    {
+      "task": "Complex analysis task...",
+      "label": "market-analysis-2024-03"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Failures Gracefully">
+    Subagents can fail due to:
+    - Context cancellation
+    - Max iterations exceeded
+    - Tool execution errors
+
+    Always check the result status and handle errors appropriately.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Learn about [Multi-Channel Setup](/guides/multi-channel-setup) to spawn agents from different chat platforms
+- Explore [Docker Deployment](/guides/docker-deployment) for production agent orchestration
+- Review [Configuration](/guides/configuration) for tuning subagent parameters

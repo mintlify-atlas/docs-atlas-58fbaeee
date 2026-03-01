@@ -1,0 +1,339 @@
+---
+title: Anthropic (Claude)
+description: Configure Claude models for Weaver with native SDK support
+---
+
+Weaver provides native SDK support for Anthropic's Claude models with both API key and OAuth authentication.
+
+## Authentication Methods
+
+### 1. API Key Authentication
+
+Standard Anthropic API key authentication.
+
+#### Get API Key
+
+1. Visit [Anthropic Console](https://console.anthropic.com/)
+2. Navigate to API Keys
+3. Create a new API key
+4. Copy the key (starts with `sk-ant-`)
+
+#### Configure Weaver
+
+**Option A: Configuration File**
+
+Add to `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "sk-ant-...",
+      "api_base": "https://api.anthropic.com/v1"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5-20250929"
+    }
+  }
+}
+```
+
+**Option B: Environment Variable**
+
+Add to `.env`:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### 2. OAuth Authentication
+
+Use OAuth for token-based authentication:
+
+```bash
+weaver auth login --provider anthropic
+```
+
+Configure in `~/.weaver/config.json`:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "auth_method": "oauth"
+    }
+  }
+}
+```
+
+<Note>
+  OAuth authentication automatically refreshes tokens and is recommended for long-running deployments.
+</Note>
+
+## Available Models
+
+Weaver supports all Claude model variants:
+
+| Model | Description | Context Window |
+|-------|-------------|----------------|
+| `claude-sonnet-4-5-20250929` | Latest Sonnet (default) | 200K tokens |
+| `claude-3.5-sonnet-20241022` | Previous Sonnet version | 200K tokens |
+| `claude-3-opus-20240229` | Most capable Claude 3 | 200K tokens |
+| `claude-3-haiku-20240307` | Fast and efficient | 200K tokens |
+
+## Configuration Options
+
+<ParamField path="api_key" type="string">
+  Anthropic API key (required for API key auth)
+</ParamField>
+
+<ParamField path="api_base" type="string" default="https://api.anthropic.com/v1">
+  Anthropic API endpoint URL
+</ParamField>
+
+<ParamField path="auth_method" type="string">
+  Authentication method: `api_key` (default), `oauth`, or `token`
+</ParamField>
+
+<ParamField path="proxy" type="string">
+  HTTP/HTTPS proxy URL for API requests (optional)
+</ParamField>
+
+## Model Parameters
+
+Configure model behavior:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "claude-sonnet-4-5-20250929",
+      "max_tokens": 8192,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+<ParamField path="max_tokens" type="integer" default="4096">
+  Maximum tokens in response (Claude enforces max_tokens)
+</ParamField>
+
+<ParamField path="temperature" type="float" default="0.7">
+  Controls randomness in responses (0.0 = deterministic, 1.0 = very random)
+</ParamField>
+
+## Message Format
+
+Weaver automatically converts between standard and Claude message formats:
+
+### System Messages
+
+```json
+{
+  "role": "system",
+  "content": "You are a helpful assistant"
+}
+```
+
+Converted to Claude's `system` parameter.
+
+### User Messages
+
+```json
+{
+  "role": "user",
+  "content": "Hello!"
+}
+```
+
+### Tool Results
+
+```json
+{
+  "role": "tool",
+  "tool_call_id": "call_123",
+  "content": "{\"result\": \"success\"}"
+}
+```
+
+Converted to Claude's `tool_result` blocks.
+
+Source: `pkg/providers/claude_provider.go:59-97`
+
+## Tool Calling
+
+Claude natively supports tool calling. Weaver automatically converts tool definitions:
+
+```go
+// Weaver format
+type ToolDefinition struct {
+  Type     string
+  Function ToolFunctionDefinition
+}
+
+// Converted to Claude ToolParam
+{
+  "name": "function_name",
+  "description": "Function description",
+  "input_schema": {
+    "properties": {...},
+    "required": [...]
+  }
+}
+```
+
+Source: `pkg/providers/claude_provider.go:125-149`
+
+### Tool Response Parsing
+
+Claude returns tool calls in content blocks:
+
+```json
+{
+  "type": "tool_use",
+  "id": "toolu_123",
+  "name": "function_name",
+  "input": {...}
+}
+```
+
+Weaver parses these into standard `ToolCall` format.
+
+Source: `pkg/providers/claude_provider.go:151-194`
+
+## Implementation Details
+
+Weaver's Anthropic integration uses:
+
+- **ClaudeProvider** with native Anthropic SDK (`github.com/anthropics/anthropic-sdk-go`)
+- Automatic token refresh via token source function
+- Native tool calling support with input schema validation
+- Proper message format conversion for system/user/assistant/tool roles
+
+Source: `pkg/providers/claude_provider.go`
+
+## Usage Examples
+
+### Basic Usage
+
+```bash
+# Use latest Sonnet
+weaver chat --model claude-sonnet-4-5-20250929
+
+# Use Opus for complex tasks
+weaver chat --model claude-3-opus-20240229
+
+# Use Haiku for speed
+weaver chat --model claude-3-haiku-20240307
+```
+
+### With Tool Calling
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "claude-sonnet-4-5-20250929",
+      "max_tokens": 8192,
+      "max_tool_iterations": 20
+    }
+  }
+}
+```
+
+### With Proxy
+
+Configure proxy for restricted networks:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "sk-ant-...",
+      "proxy": "http://proxy.company.com:8080"
+    }
+  }
+}
+```
+
+## Response Handling
+
+Weaver parses Claude responses with proper finish reason mapping:
+
+| Claude Reason | Weaver Reason | Description |
+|---------------|---------------|-------------|
+| `end_turn` | `stop` | Natural completion |
+| `tool_use` | `tool_calls` | Tool calling triggered |
+| `max_tokens` | `length` | Hit token limit |
+
+Source: `pkg/providers/claude_provider.go:174-183`
+
+## Troubleshooting
+
+### API Key Issues
+
+```bash
+# Verify API key
+echo $ANTHROPIC_API_KEY
+
+# Test with curl
+curl https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d '{"model":"claude-3-haiku-20240307","max_tokens":100,"messages":[{"role":"user","content":"Hi"}]}'
+```
+
+### OAuth Issues
+
+```bash
+# Re-authenticate
+weaver auth logout --provider anthropic
+weaver auth login --provider anthropic
+
+# Check credentials
+weaver auth list
+```
+
+### Common Errors
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized">
+    - Verify API key is correct and starts with `sk-ant-`
+    - For OAuth: Run `weaver auth login --provider anthropic`
+    - Check that the API key hasn't been revoked
+  </Accordion>
+  
+  <Accordion title="400 Bad Request - Missing max_tokens">
+    - Claude requires `max_tokens` parameter
+    - Set in config: `"max_tokens": 8192`
+    - Weaver defaults to 4096 if not specified
+  </Accordion>
+  
+  <Accordion title="429 Rate Limit">
+    - Check your API usage in Anthropic Console
+    - Implement exponential backoff
+    - Consider upgrading to a higher tier
+  </Accordion>
+  
+  <Accordion title="Tool Call Parsing Error">
+    - Ensure tool definitions include proper schema
+    - Check that `required` fields are specified
+    - Verify JSON in tool responses is valid
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Provider Overview" icon="arrow-left" href="/integrations/providers/overview">
+    Back to all providers
+  </Card>
+  <Card title="Tool Calling" icon="wrench" href="/core-concepts/tools">
+    Use tools with Claude
+  </Card>
+</CardGroup>

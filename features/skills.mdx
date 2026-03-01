@@ -1,0 +1,411 @@
+---
+title: Skills
+description: Install, manage, and create skills to extend Weaver's capabilities with domain-specific knowledge and workflows.
+---
+
+Skills are reusable knowledge modules that enhance Weaver's capabilities for specific domains or tasks. They provide specialized instructions, workflows, and context that guide the agent's behavior.
+
+## What are Skills?
+
+A skill is a markdown file (`SKILL.md`) containing:
+- Domain-specific instructions
+- Workflow guides
+- Best practices
+- Reference documentation
+- Tool usage examples
+
+Skills are injected into the agent's context when needed, providing expertise without requiring code changes.
+
+## Skill Sources
+
+Weaver loads skills from three locations (in priority order):
+
+1. **Workspace Skills** (`<workspace>/skills/`) - Project-specific
+2. **Global Skills** (`~/.weaver/skills/`) - User-wide
+3. **Builtin Skills** - Bundled with Weaver
+
+Higher priority sources override lower ones.
+
+## Skill Structure
+
+### Basic Skill Format
+
+```markdown
+---
+name: github
+description: GitHub operations and best practices
+---
+
+# GitHub Skill
+
+This skill provides expertise in GitHub operations.
+
+## Common Tasks
+
+### Creating a Pull Request
+1. Create feature branch: `git checkout -b feature-name`
+2. Make changes and commit
+3. Push: `git push -u origin feature-name`
+4. Use `gh pr create` tool
+
+### Code Review Guidelines
+- Check for tests
+- Verify documentation
+- Review security implications
+
+## Tools Available
+- `gh pr create` - Create pull requests
+- `gh pr list` - List PRs
+- `gh issue create` - Create issues
+```
+
+### Frontmatter
+
+Skills use YAML frontmatter for metadata:
+
+```yaml
+---
+name: skill-name
+description: Brief description of what this skill provides
+---
+```
+
+**Constraints:**
+- Name: Alphanumeric with hyphens, max 64 chars
+- Description: Max 1024 chars
+- Both fields are required
+
+## Installing Skills
+
+### From GitHub
+
+Install community skills from GitHub repositories:
+
+```go
+installer := skills.NewSkillInstaller(workspace)
+err := installer.InstallFromGitHub(ctx, "owner/repo")
+```
+
+This fetches `SKILL.md` from the repository's main branch and installs it to `<workspace>/skills/<repo-name>/`.
+
+### Manual Installation
+
+1. Create directory: `mkdir -p <workspace>/skills/my-skill`
+2. Create skill file: `<workspace>/skills/my-skill/SKILL.md`
+3. Add frontmatter and content
+4. Restart Weaver or reload skills
+
+### List Available Skills
+
+Browse the community skill registry:
+
+```go
+installer := skills.NewSkillInstaller(workspace)
+available, err := installer.ListAvailableSkills(ctx)
+```
+
+This fetches the skill catalog from:
+```
+https://raw.githubusercontent.com/operator.onl/weaver-skills/main/skills.json
+```
+
+## Managing Skills
+
+### Listing Installed Skills
+
+```go
+loader := skills.NewSkillsLoader(workspace, globalPath, builtinPath)
+allSkills := loader.ListSkills()
+
+for _, skill := range allSkills {
+    fmt.Printf("%s (%s): %s\n", skill.Name, skill.Source, skill.Description)
+}
+```
+
+**Output:**
+```
+github (workspace): GitHub operations and best practices
+kubernetes (global): Kubernetes cluster management
+hardware (builtin): Hardware interfacing with I2C/SPI
+```
+
+### Loading a Skill
+
+```go
+loader := skills.NewSkillsLoader(workspace, globalPath, builtinPath)
+content, ok := loader.LoadSkill("github")
+if ok {
+    // Skill content (frontmatter stripped)
+    fmt.Println(content)
+}
+```
+
+### Loading Multiple Skills
+
+```go
+skillNames := []string{"github", "kubernetes", "docker"}
+combined := loader.LoadSkillsForContext(skillNames)
+// Returns formatted content with separators
+```
+
+### Uninstalling Skills
+
+```go
+installer := skills.NewSkillInstaller(workspace)
+err := installer.Uninstall("skill-name")
+```
+
+This removes the skill directory from the workspace.
+
+## Using Skills in Agents
+
+### Auto-Discovery
+
+Weaver automatically discovers and lists skills:
+
+```go
+loader := skills.NewSkillsLoader(workspace, globalPath, builtinPath)
+summary := loader.BuildSkillsSummary()
+```
+
+**Generated XML:**
+```xml
+<skills>
+  <skill>
+    <name>github</name>
+    <description>GitHub operations and best practices</description>
+    <location>/workspace/skills/github/SKILL.md</location>
+    <source>workspace</source>
+  </skill>
+  <skill>
+    <name>docker</name>
+    <description>Docker container management</description>
+    <location>~/.weaver/skills/docker/SKILL.md</location>
+    <source>global</source>
+  </skill>
+</skills>
+```
+
+This summary is injected into the agent's system prompt, allowing it to discover and load skills on demand.
+
+### Loading Skills on Demand
+
+When the agent identifies a need for a skill:
+
+1. Agent sees skill in `<skills>` list
+2. Agent requests skill by name
+3. Skill content is loaded and injected
+4. Agent uses skill knowledge to complete task
+
+## Creating Effective Skills
+
+### Best Practices
+
+1. **Clear Structure**
+   - Use markdown headings for organization
+   - Group related information
+   - Include table of contents for large skills
+
+2. **Actionable Instructions**
+   - Provide step-by-step workflows
+   - Include code examples
+   - Reference available tools
+
+3. **Context and Background**
+   - Explain when to use the skill
+   - Document prerequisites
+   - Link to external resources
+
+4. **Tool Integration**
+   - List relevant tools
+   - Show tool usage examples
+   - Explain tool parameters
+
+5. **Error Handling**
+   - Common failure modes
+   - Troubleshooting steps
+   - Fallback strategies
+
+### Example: Hardware Skill
+
+```markdown
+---
+name: hardware
+description: Interface with I2C and SPI devices on Linux
+---
+
+# Hardware Interfacing Skill
+
+This skill enables interaction with hardware devices via I2C and SPI buses.
+
+## Prerequisites
+- Linux system with I2C/SPI support
+- Kernel modules: i2c-dev, spidev
+- Device tree configuration
+
+## I2C Operations
+
+### Detecting I2C Buses
+```json
+{
+  "tool": "i2c",
+  "args": {"action": "detect"}
+}
+```
+
+### Reading from Sensor (AHT20)
+```json
+{
+  "tool": "i2c",
+  "args": {
+    "action": "read",
+    "bus": "1",
+    "address": 56,
+    "length": 6
+  }
+}
+```
+
+## SPI Operations
+
+### Listing SPI Devices
+```json
+{
+  "tool": "spi",
+  "args": {"action": "list"}
+}
+```
+
+### Reading from Display
+```json
+{
+  "tool": "spi",
+  "args": {
+    "action": "read",
+    "device": "2.0",
+    "speed": 1000000,
+    "length": 128
+  }
+}
+```
+
+## Common Issues
+
+### Permission Denied
+Add user to i2c/spi groups:
+```bash
+sudo usermod -a -G i2c,spi $USER
+```
+
+### Device Not Found
+Load kernel modules:
+```bash
+sudo modprobe i2c-dev
+sudo modprobe spidev
+```
+```
+
+## Skill Registry Format
+
+Community skills are listed in `skills.json`:
+
+```json
+[
+  {
+    "name": "github",
+    "repository": "weaver-community/github-skill",
+    "description": "GitHub operations and workflows",
+    "author": "community",
+    "tags": ["git", "github", "vcs"]
+  },
+  {
+    "name": "kubernetes",
+    "repository": "weaver-community/k8s-skill",
+    "description": "Kubernetes cluster management",
+    "author": "devops-team",
+    "tags": ["k8s", "containers", "devops"]
+  }
+]
+```
+
+## Advanced Features
+
+### Skill Dependencies
+
+Skills can reference other skills:
+
+```markdown
+# Docker Compose Skill
+
+This skill builds on the `docker` skill.
+Ensure the docker skill is loaded first.
+
+## Prerequisites
+- Load the `docker` skill
+- Docker Compose installed
+```
+
+### Skill Resources
+
+Bundle additional files with skills:
+
+```
+skills/
+  my-skill/
+    SKILL.md
+    templates/
+      config.yaml
+    scripts/
+      setup.sh
+```
+
+Reference in skill:
+```markdown
+See `templates/config.yaml` for configuration template.
+```
+
+## Implementation Details
+
+### SkillsLoader
+
+```go
+type SkillsLoader struct {
+    workspace       string
+    workspaceSkills string  // <workspace>/skills
+    globalSkills    string  // ~/.weaver/skills
+    builtinSkills   string  // /usr/share/weaver/skills
+}
+```
+
+### SkillInfo
+
+```go
+type SkillInfo struct {
+    Name        string  // Skill identifier
+    Path        string  // Absolute path to SKILL.md
+    Source      string  // "workspace", "global", or "builtin"
+    Description string  // From frontmatter
+}
+```
+
+### Validation
+
+Skills are validated on load:
+- Name format: alphanumeric with hyphens
+- Name length: max 64 characters
+- Description length: max 1024 characters
+- Frontmatter presence and format
+
+## Performance
+
+- Skills are loaded on-demand, not at startup
+- Frontmatter is parsed only when listing skills
+- Content is stripped of frontmatter before injection
+- Skills are cached in memory during agent session
+
+## Security
+
+- Skills are plain markdown (no code execution)
+- Workspace skills override global/builtin (user control)
+- Skill paths are validated to prevent traversal
+- GitHub installation validates repository format

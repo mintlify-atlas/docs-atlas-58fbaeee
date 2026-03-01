@@ -1,0 +1,520 @@
+---
+title: Channels
+description: Multi-platform communication channels that connect users to Weaver agents
+---
+
+## Overview
+
+**Channels** are Weaver's abstraction for external communication platforms. They connect users to agents through messaging platforms like Telegram, Discord, Slack, and more.
+
+## Architecture
+
+Channels communicate with agents via the message bus:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Channel
+    participant Bus
+    participant Agent
+    
+    User->>Channel: Send message
+    Channel->>Bus: PublishInbound
+    Note over Bus: Buffered channel (cap: 100)
+    Bus->>Agent: ConsumeInbound
+    Agent->>Agent: Process message
+    Agent->>Bus: PublishOutbound
+    Bus->>Channel: SubscribeOutbound
+    Channel->>User: Send response
+```
+
+## Channel Interface
+
+From `pkg/channels/base.go`:
+
+```go
+type Channel interface {
+    Start(ctx context.Context) error
+    Stop(ctx context.Context) error
+    Send(ctx context.Context, msg bus.OutboundMessage) error
+    IsRunning() bool
+}
+```
+
+All channels implement this interface, providing uniform behavior:
+
+<Steps>
+  <Step title="Start">
+    Initialize connection to the platform (WebSocket, HTTP polling, etc.)
+  </Step>
+  <Step title="Receive">
+    Listen for incoming messages and publish to message bus
+  </Step>
+  <Step title="Send">
+    Subscribe to outbound messages and forward to platform
+  </Step>
+  <Step title="Stop">
+    Gracefully disconnect and cleanup resources
+  </Step>
+</Steps>
+
+## Supported Channels
+
+Weaver supports a wide range of messaging platforms:
+
+<Tabs>
+  <Tab title="Telegram">
+    ### Configuration
+
+    ```json
+    {
+      "channels": {
+        "telegram": {
+          "enabled": true,
+          "token": "YOUR_BOT_TOKEN"
+        }
+      }
+    }
+    ```
+
+    ### Features
+
+    - Text messages with Markdown formatting
+    - Voice message transcription (via Groq)
+    - File uploads and downloads
+    - Inline keyboards and buttons
+    - Commands: `/start`, `/help`, `/status`
+
+    ### Bot Setup
+
+    1. Talk to [@BotFather](https://t.me/botfather) on Telegram
+    2. Create a new bot: `/newbot`
+    3. Copy the token and add to config
+    4. Start gateway: `weaver gateway`
+
+    <Tip>
+      Enable voice transcription by adding Groq API key in config:
+      ```json
+      {
+        "providers": {
+          "groq": {
+            "api_key": "YOUR_GROQ_KEY"
+          }
+        }
+      }
+      ```
+    </Tip>
+  </Tab>
+
+  <Tab title="Discord">
+    ### Configuration
+
+    ```json
+    {
+      "channels": {
+        "discord": {
+          "enabled": true,
+          "token": "YOUR_BOT_TOKEN"
+        }
+      }
+    }
+    ```
+
+    ### Features
+
+    - Guild (server) and DM support
+    - Message replies and threads
+    - Voice message transcription
+    - Rich embeds and reactions
+
+    ### Bot Setup
+
+    1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+    2. Create new application → Bot → Copy token
+    3. Enable "Message Content Intent" under Bot settings
+    4. Invite bot with OAuth2 URL:
+       ```
+       https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=2048&scope=bot
+       ```
+  </Tab>
+
+  <Tab title="Slack">
+    ### Configuration
+
+    ```json
+    {
+      "channels": {
+        "slack": {
+          "enabled": true,
+          "bot_token": "xoxb-YOUR-TOKEN",
+          "app_token": "xapp-YOUR-TOKEN"
+        }
+      }
+    }
+    ```
+
+    ### Features
+
+    - Workspace channels and DMs
+    - Threaded conversations
+    - Voice message transcription
+    - Rich message formatting
+    - Slash commands
+
+    ### Bot Setup
+
+    1. Create app at [api.slack.com/apps](https://api.slack.com/apps)
+    2. Enable Socket Mode
+    3. Add Bot Token Scopes:
+       - `chat:write`
+       - `channels:history`
+       - `groups:history`
+       - `im:history`
+    4. Install to workspace and copy tokens
+  </Tab>
+
+  <Tab title="WhatsApp">
+    ### Configuration
+
+    ```json
+    {
+      "channels": {
+        "whatsapp": {
+          "enabled": true,
+          "bridge_url": "http://whatsapp-bridge:3000"
+        }
+      }
+    }
+    ```
+
+    ### Features
+
+    - Personal and group chats
+    - Media messages
+    - Message reactions
+
+    <Warning>
+      Requires a WhatsApp bridge service (e.g., [whatsmeow](https://github.com/tulir/whatsmeow))
+    </Warning>
+  </Tab>
+
+  <Tab title="Other Platforms">
+    Weaver also supports:
+
+    <AccordionGroup>
+      <Accordion title="Feishu (Lark)">
+        Chinese/international enterprise messaging platform
+        ```json
+        {
+          "feishu": {
+            "enabled": true,
+            "app_id": "...",
+            "app_secret": "..."
+          }
+        }
+        ```
+      </Accordion>
+
+      <Accordion title="DingTalk">
+        Alibaba's enterprise communication platform
+        ```json
+        {
+          "dingtalk": {
+            "enabled": true,
+            "client_id": "...",
+            "client_secret": "..."
+          }
+        }
+        ```
+      </Accordion>
+
+      <Accordion title="LINE">
+        Popular messaging app in Japan and Southeast Asia
+        ```json
+        {
+          "line": {
+            "enabled": true,
+            "channel_secret": "...",
+            "channel_access_token": "..."
+          }
+        }
+        ```
+      </Accordion>
+
+      <Accordion title="QQ">
+        Tencent's messaging platform (via OneBot)
+        ```json
+        {
+          "qq": {
+            "enabled": true,
+            "http_url": "http://onebot:5700"
+          }
+        }
+        ```
+      </Accordion>
+
+      <Accordion title="OneBot">
+        Universal chat bot protocol supporting multiple platforms
+        ```json
+        {
+          "onebot": {
+            "enabled": true,
+            "ws_url": "ws://onebot:8080",
+            "access_token": "..."
+          }
+        }
+        ```
+      </Accordion>
+
+      <Accordion title="MaixCam">
+        Embedded AI camera with local UI
+        ```json
+        {
+          "maixcam": {
+            "enabled": true,
+            "port": 8081
+          }
+        }
+        ```
+      </Accordion>
+    </AccordionGroup>
+  </Tab>
+</Tabs>
+
+## Message Structure
+
+### Inbound Messages
+
+From channels to agents:
+
+```go
+type InboundMessage struct {
+    Channel    string            // Channel name ("telegram", "discord")
+    SenderID   string            // User/chat identifier
+    ChatID     string            // Conversation identifier
+    Content    string            // Message text
+    SessionKey string            // Session for history
+    Metadata   map[string]string // Extra context
+}
+```
+
+Example:
+
+```go
+msgBus.PublishInbound(bus.InboundMessage{
+    Channel:    "telegram",
+    SenderID:   "@username",
+    ChatID:     "123456789",
+    Content:    "What's the weather like?",
+    SessionKey: "telegram:123456789",
+})
+```
+
+### Outbound Messages
+
+From agents to channels:
+
+```go
+type OutboundMessage struct {
+    Channel string // Target channel
+    ChatID  string // Target chat
+    Content string // Message text
+}
+```
+
+Example:
+
+```go
+msgBus.PublishOutbound(bus.OutboundMessage{
+    Channel: "telegram",
+    ChatID:  "123456789",
+    Content: "The weather is sunny, 72°F.",
+})
+```
+
+## Internal Channels
+
+Weaver reserves special channel names for internal use:
+
+```go
+const (
+    ChannelCLI      = "cli"      // Direct agent invocation
+    ChannelSystem   = "system"   // Subagent completions
+    ChannelSubagent = "subagent" // Subagent context
+    ChannelForge    = "forge"    // Forge Studio (code gen)
+)
+```
+
+These channels:
+- Do not require external configuration
+- Are not dispatched to external platforms
+- Have special processing logic in the agent
+
+<Info>
+  Messages on internal channels are logged but never sent to external users.
+</Info>
+
+## Session Keys
+
+Each conversation is tracked by a session key:
+
+```
+<channel>:<chat_id>
+```
+
+Examples:
+- `telegram:123456789`
+- `discord:987654321`
+- `cli:default`
+- `rest:api-user-42`
+
+Session keys determine:
+- Which conversation history to load
+- Where to persist new messages
+- Which session to summarize when context is full
+
+## Voice Transcription
+
+Channels can integrate voice transcription:
+
+```go
+if transcriber != nil {
+    if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
+        if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
+            tc.SetTranscriber(transcriber)
+        }
+    }
+}
+```
+
+Voice messages are automatically:
+1. Downloaded from platform
+2. Sent to Groq Whisper API
+3. Transcribed to text
+4. Processed as normal messages
+
+<Tip>
+  Groq transcription is fast (&lt;1s for typical voice messages) and free for reasonable usage.
+</Tip>
+
+## Channel Management
+
+From the agent loop, channels can be managed via commands:
+
+```plaintext
+/list channels
+```
+
+Output:
+
+```
+Enabled channels: telegram, discord, slack
+```
+
+```plaintext
+/show channel
+```
+
+Output:
+
+```
+Current channel: telegram
+```
+
+## Custom Channels
+
+Implement the `Channel` interface to add new platforms:
+
+```go
+type MyChannel struct {
+    bus     *bus.MessageBus
+    config  MyChannelConfig
+    running bool
+}
+
+func (c *MyChannel) Start(ctx context.Context) error {
+    c.running = true
+    go c.receiveLoop(ctx)
+    return nil
+}
+
+func (c *MyChannel) receiveLoop(ctx context.Context) {
+    for c.running {
+        msg := c.pollPlatform()
+        c.bus.PublishInbound(bus.InboundMessage{
+            Channel:    "mychannel",
+            SenderID:   msg.UserID,
+            ChatID:     msg.ChatID,
+            Content:    msg.Text,
+            SessionKey: fmt.Sprintf("mychannel:%s", msg.ChatID),
+        })
+    }
+}
+
+func (c *MyChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+    return c.sendToPlatform(msg.ChatID, msg.Content)
+}
+
+func (c *MyChannel) Stop(ctx context.Context) error {
+    c.running = false
+    return nil
+}
+
+func (c *MyChannel) IsRunning() bool {
+    return c.running
+}
+```
+
+Register in channel manager:
+
+```go
+myChannel := NewMyChannel(config, msgBus)
+channelManager.RegisterChannel("mychannel", myChannel)
+```
+
+## Message Bus Details
+
+The message bus uses buffered channels for non-blocking communication:
+
+```go
+type MessageBus struct {
+    inbound  chan InboundMessage  // Buffer: 100
+    outbound chan OutboundMessage // Buffer: 100
+}
+```
+
+<Warning>
+  If a channel produces messages faster than the agent can process (>100/sec sustained), the bus will block. Monitor gateway logs for backpressure warnings.
+</Warning>
+
+## Health Monitoring
+
+Check channel status via REST API:
+
+```bash
+curl http://localhost:8080/ready
+```
+
+Response includes channel status:
+
+```json
+{
+  "status": "ready",
+  "channels": {
+    "telegram": {"enabled": true, "running": true},
+    "discord": {"enabled": true, "running": true},
+    "slack": {"enabled": true, "running": false}
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Gateway" icon="server" href="/concepts/gateway">
+    Learn about gateway architecture
+  </Card>
+  <Card title="Configuration" icon="gear" href="/customize/configuration">
+    Configure channel settings
+  </Card>
+</CardGroup>

@@ -1,0 +1,259 @@
+---
+title: weaver agent
+description: Interact with the AI agent directly via CLI
+---
+
+The `agent` command provides direct access to Weaver's AI agent through the command line, supporting both single-message and interactive modes.
+
+## Usage
+
+```bash
+weaver agent [options]
+```
+
+## Modes
+
+### Single Message Mode
+
+Send a single message and receive a response:
+
+```bash
+weaver agent -m "What's the weather like?"
+```
+
+Output:
+```
+🔍 Debug mode enabled (if -d flag used)
+🕸️ Based on your location, the current weather is...
+```
+
+### Interactive Mode
+
+Start a conversational session:
+
+```bash
+weaver agent
+```
+
+Output:
+```
+🕸️ Interactive mode (Ctrl+C to exit)
+
+🕸️ You: Hello!
+
+🕸️ Hello! How can I assist you today?
+
+🕸️ You: 
+```
+
+## Options
+
+<ParamField path="-m, --message" type="string">
+  Single message to send to the agent
+  
+  When provided, agent runs in single-message mode and exits after response.
+  
+  ```bash
+  weaver agent -m "Summarize the latest news"
+  ```
+</ParamField>
+
+<ParamField path="-s, --session" type="string" default="cli:default">
+  Session key for conversation history
+  
+  Use different session keys to maintain separate conversation contexts.
+  
+  ```bash
+  weaver agent -s "project-alpha" -m "What did we discuss?"
+  ```
+</ParamField>
+
+<ParamField path="-d, --debug" type="flag">
+  Enable debug mode with verbose logging
+  
+  Displays detailed log output to help troubleshoot issues.
+  
+  ```bash
+  weaver agent --debug -m "Test message"
+  ```
+  
+  Output includes:
+  - Tool loading details
+  - Skill availability
+  - Provider API calls
+</ParamField>
+
+## Interactive Mode Features
+
+### Command History
+
+Interactive mode uses readline with persistent history:
+- **Location:** `/tmp/.weaver_history`
+- **Limit:** 100 entries
+- **Navigation:** Up/Down arrows
+
+### Exit Commands
+
+Multiple ways to exit interactive mode:
+
+```bash
+🕸️ You: exit
+Goodbye!
+```
+
+```bash
+🕸️ You: quit
+Goodbye!
+```
+
+```bash
+🕸️ You: ^C
+Goodbye!
+```
+
+### Fallback Mode
+
+If readline initialization fails, agent falls back to simple input mode:
+
+```bash
+Error initializing readline: ...
+Falling back to simple input mode...
+🕸️ You: 
+```
+
+## Startup Information
+
+Agent displays initialization details:
+
+```bash
+🕸️ Agent initialized
+  - Tools: 12 loaded
+  - Skills: 4/6 available
+```
+
+## Examples
+
+<CodeGroup>
+```bash Simple query
+$ weaver agent -m "What's 15% of 250?"
+
+🕸️ 15% of 250 is 37.5.
+```
+
+```bash With session
+$ weaver agent -s "finance" -m "Track my expenses"
+
+🕸️ I'll help you track expenses. What transaction would you like to record?
+
+$ weaver agent -s "finance" -m "Spent $45 on groceries"
+
+🕸️ Recorded: $45 for groceries. Your running total is now $45.
+```
+
+```bash Debug mode
+$ weaver agent --debug -m "Test"
+
+🔍 Debug mode enabled
+[DEBUG] Loading tools...
+[DEBUG] Registered 12 tools
+[DEBUG] Loading skills from workspace...
+[DEBUG] Available skills: 4/6
+
+🕸️ I'm ready! How can I help?
+```
+
+```bash Interactive session
+$ weaver agent
+
+🕸️ Interactive mode (Ctrl+C to exit)
+
+🕸️ You: Remember that my favorite color is blue
+
+🕸️ Got it! I'll remember that your favorite color is blue.
+
+🕸️ You: What's my favorite color?
+
+🕸️ Your favorite color is blue.
+
+🕸️ You: exit
+Goodbye!
+```
+</CodeGroup>
+
+## Session Management
+
+Sessions persist conversation history across commands:
+
+```bash
+# First message in session
+weaver agent -s "project-x" -m "We're building a chatbot"
+
+# Later message in same session (remembers context)
+weaver agent -s "project-x" -m "What are we building?"
+# Response: "You mentioned you're building a chatbot."
+```
+
+Default session key: `cli:default`
+
+## Exit Codes
+
+| Code | Reason |
+|------|--------|
+| 0 | Success - message processed |
+| 1 | Config loading failed |
+| 1 | Provider creation failed |
+| 1 | Message processing error (in single-message mode) |
+
+## Error Handling
+
+### Configuration Errors
+
+```bash
+Error loading config: open ~/.weaver/config.json: no such file or directory
+```
+Run `weaver onboard` first.
+
+### Provider Errors
+
+```bash
+Error creating provider: API key not configured
+```
+Add API key to `~/.weaver/config.json`:
+```json
+"openrouter": {
+  "api_key": "sk-or-..."
+}
+```
+
+### Processing Errors (Interactive Mode)
+
+```bash
+🕸️ You: What's the weather?
+
+Error: API rate limit exceeded
+
+🕸️ You: 
+```
+Interactive mode continues after errors.
+
+### Processing Errors (Message Mode)
+
+```bash
+$ weaver agent -m "Test"
+Error: API rate limit exceeded
+$ echo $?
+1
+```
+Message mode exits with code 1 on errors.
+
+## Performance Notes
+
+- **Startup time:** ~1-2 seconds (loads tools and skills)
+- **Response time:** Varies by model and complexity
+- **Memory usage:** ~50-100 MB baseline
+
+## Related Commands
+
+- [`weaver gateway`](/api/cli/gateway) - Run agent as persistent service
+- [`weaver skills`](/api/cli/skills) - Manage agent capabilities
+- [`weaver status`](/api/cli/overview#status) - Check agent configuration

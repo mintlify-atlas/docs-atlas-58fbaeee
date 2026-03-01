@@ -1,0 +1,295 @@
+---
+title: 'Subagent Tool'
+description: 'Delegate tasks to independent agent instances with tool access'
+---
+
+The `subagent` tool spawns independent AI agent instances to handle specific tasks with full tool access and autonomous execution.
+
+## subagent
+
+Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance.
+
+### Input Parameters
+
+<ParamField path="task" type="string" required>
+  The task for the subagent to complete. Be specific and provide clear instructions.
+</ParamField>
+
+<ParamField path="label" type="string">
+  Optional short label for the task (for display and tracking). Defaults to "(unnamed)" if not provided.
+</ParamField>
+
+### Response
+
+Returns execution results with different detail levels for LLM and user.
+
+<ResponseField name="result" type="string">
+  **For LLM (detailed):**
+  ```
+  Subagent task completed:
+  Label: {label}
+  Iterations: {iteration_count}
+  Result: {full_output}
+  ```
+  
+  **For User (summary):**
+  Truncated to 500 characters maximum for readability.
+</ResponseField>
+
+### Usage Examples
+
+**Basic task delegation:**
+```json
+{
+  "task": "Read the package.json file and list all dependencies"
+}
+```
+
+**With label for tracking:**
+```json
+{
+  "task": "Analyze the /src directory and create a summary of the code structure",
+  "label": "code-analysis"
+}
+```
+
+**Complex multi-step task:**
+```json
+{
+  "task": "1. Search the web for the latest Python best practices. 2. Create a checklist based on the findings. 3. Save the checklist to checklist.md",
+  "label": "python-checklist"
+}
+```
+
+### Execution Flow
+
+1. **Task initialization:**
+   - Subagent receives task description
+   - System prompt configures independent operation
+   - Full tool registry access granted
+
+2. **Tool loop execution:**
+   - Maximum iterations: 10 (configurable)
+   - LLM model: Same as parent agent
+   - Tools: Full access to all registered tools
+   - Options: `max_tokens: 4096`, `temperature: 0.7`
+
+3. **Result aggregation:**
+   - Final output captured from last iteration
+   - Iteration count tracked
+   - Results formatted for LLM and user
+
+4. **Synchronous return:**
+   - Main agent waits for completion
+   - Full results returned in ToolResult
+
+### System Prompt
+
+Subagents are initialized with the following instructions:
+
+```
+You are a subagent. Complete the given task independently and provide a clear, concise result.
+```
+
+This ensures:
+- Independent operation without parent context pollution
+- Focus on task completion
+- Clear result communication
+
+### Tool Access
+
+Subagents have access to the same tools as the parent agent, including:
+
+- Filesystem tools (read_file, write_file, list_dir)
+- Shell execution (exec)
+- Web tools (web_search, web_fetch)
+- Hardware tools (i2c, spi) if available
+- Image generation (generate_image) if configured
+- Recursive subagent spawning (use with caution)
+
+<Warning>
+  Subagents can spawn their own subagents, creating recursion. Monitor iteration limits to prevent excessive nesting.
+</Warning>
+
+### Error Conditions
+
+**Validation errors:**
+- `task is required` - Missing task parameter (with error object)
+- `Subagent manager not configured` - Manager is nil (with error object)
+
+**Execution errors:**
+- `Subagent execution failed: {error}` - Tool loop failed or timed out (with error object)
+
+**All errors include:**
+- `IsError: true` flag
+- `Err` field set with error object
+- Error message in both `ForLLM` and `ForUser` (truncated for user)
+
+### Response Format
+
+**Successful execution:**
+```json
+{
+  "ForLLM": "Subagent task completed:\nLabel: code-analysis\nIterations: 5\nResult: Found 23 files in /src directory. Main components: auth/ (3 files), api/ (8 files), utils/ (12 files). All files use TypeScript with strict mode enabled.",
+  "ForUser": "Found 23 files in /src directory. Main components: auth/ (3 files), api/ (8 files), utils/ (12 files). All files use TypeScript with strict mode enabled.",
+  "Silent": false,
+  "IsError": false,
+  "Async": false
+}
+```
+
+**Failed execution:**
+```json
+{
+  "ForLLM": "Subagent execution failed: context deadline exceeded",
+  "ForUser": "Subagent execution failed: context deadline exceeded",
+  "Silent": false,
+  "IsError": true,
+  "Async": false,
+  "Err": "context deadline exceeded"
+}
+```
+
+### Performance Characteristics
+
+**Execution time:**
+- Depends on task complexity and tool calls
+- Maximum iterations: 10 (can complete earlier)
+- Each iteration: ~1-10 seconds (model-dependent)
+- Typical range: 5-60 seconds
+
+**Resource usage:**
+- Creates new conversation context (isolated from parent)
+- LLM tokens: ~500-4000 per iteration
+- Memory: Minimal overhead per subagent
+- Concurrent subagents: Limited by system resources
+
+### Comparison: Subagent vs Parent Execution
+
+| Feature | Subagent | Parent Agent |
+|---------|----------|-------------|
+| **Context** | Isolated | Shared with conversation |
+| **Tool access** | Full registry | Full registry |
+| **Execution** | Synchronous blocking | Asynchronous streaming |
+| **Iterations** | Max 10 (default) | Unlimited |
+| **Result** | Returned to parent | Shown to user |
+| **Use case** | Focused subtasks | Interactive conversation |
+
+### Best Practices
+
+**When to use subagents:**
+- ✅ Isolated, well-defined subtasks
+- ✅ Tasks requiring multiple tool calls
+- ✅ Parallel execution of independent operations
+- ✅ Complex multi-step procedures
+
+**When NOT to use subagents:**
+- ❌ Simple single-tool operations (use tool directly)
+- ❌ Tasks requiring user interaction
+- ❌ Operations needing conversation context
+- ❌ Recursive or deeply nested tasks
+
+**Task description guidelines:**
+
+**Good task descriptions:**
+```json
+{"task": "Read config.json, extract the database connection string, and validate it's in correct format"}
+{"task": "Search for TypeScript best practices published in 2024 and summarize top 5 recommendations"}
+{"task": "List all .go files in /src, count total lines of code, and save report to stats.txt"}
+```
+
+**Poor task descriptions:**
+```json
+{"task": "Help me"}
+{"task": "Do something with the files"}
+{"task": "Figure out what to do"}
+```
+
+**Label naming:**
+- Use kebab-case: `code-analysis`, `web-research`
+- Keep short: 2-4 words
+- Descriptive: `dependency-check` not `task1`
+
+### Advanced Usage
+
+**Parallel subagent execution:**
+
+While individual subagents are synchronous, the parent agent can coordinate multiple subagents for parallel work:
+
+```json
+// Parent agent spawns 3 subagents for parallel analysis
+[
+  {"task": "Analyze /src for TypeScript files", "label": "ts-analysis"},
+  {"task": "Analyze /src for test coverage", "label": "test-analysis"},
+  {"task": "Analyze /src for documentation", "label": "doc-analysis"}
+]
+```
+
+**Result aggregation:**
+
+Parent agent can combine subagent results:
+
+1. Spawn subagent for task A → Get result A
+2. Spawn subagent for task B → Get result B  
+3. Synthesize final answer from A + B
+
+### Implementation Details
+
+**SubagentManager:**
+- Manages subagent lifecycle
+- Tracks active tasks (ID, status, result)
+- Provides tool registry to subagents
+- Handles message bus communication
+
+**Configuration:**
+```go
+manager := NewSubagentManager(
+  provider,      // LLM provider
+  "claude-4.5", // Model name
+  "/workspace",  // Workspace directory
+  messageBus,    // Optional message bus
+)
+
+tool := NewSubagentTool(manager)
+tool.SetContext("cli", "session-123")
+```
+
+**Tool loop config:**
+```go
+ToolLoopConfig{
+  Provider:      manager.provider,
+  Model:         manager.defaultModel,
+  Tools:         manager.tools,
+  MaxIterations: 10,
+  LLMOptions: {
+    "max_tokens":  4096,
+    "temperature": 0.7,
+  },
+}
+```
+
+### Testing
+
+From `subagent_tool_test.go`:
+
+**Test coverage:**
+- ✅ Name and description verification
+- ✅ Parameter schema validation
+- ✅ Context setting
+- ✅ Successful task execution
+- ✅ Execution without label (unnamed)
+- ✅ Missing task parameter error
+- ✅ Nil manager error handling
+- ✅ Context passing verification
+- ✅ ForUser truncation (500 char limit)
+
+**Mock provider:**
+Tests use `MockLLMProvider` that returns:
+```
+"Task completed: {task_description}"
+```
+
+This validates:
+- Subagent receives correct task
+- Results are properly formatted
+- Error handling works correctly
